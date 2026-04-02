@@ -103,6 +103,8 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `proxmox_stop_vm` | VM / LXC 停止 | ✓ confirm 必須 |
 | `proxmox_reboot_vm` | VM / LXC 再起動 | ✓ confirm 必須 |
 | `proxmox_list_snapshots` | スナップショット一覧 | ✗ |
+| `proxmox_create_snapshot` | スナップショット作成 | ✗ |
+| `proxmox_rollback_snapshot` | スナップショットへロールバック | ✓ confirm 必須 |
 | `proxmox_list_tasks` | 直近タスク一覧 | ✗ |
 
 ### Phase 2: Terraform tools ✅
@@ -131,10 +133,13 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `kubectl_describe` | kubectl describe \<resource\> \<name\> | ✗ |
 | `kubectl_logs` | Pod ログ取得 | ✗ |
 | `kubectl_apply` | マニフェスト apply | ✓ confirm 必須 |
+| `kubectl_delete` | リソース削除 | ✓ confirm 必須 |
 | `kubectl_rollout_status` | Deployment ロールアウト状態 | ✗ |
 | `kubectl_top` | Node / Pod リソース使用量 | ✗ |
 | `helm_list` | Helm リリース一覧 | ✗ |
 | `helm_get_values` | リリースの values 確認 | ✗ |
+| `helm_upgrade` | リリースのアップグレード／インストール | ✓ confirm 必須 |
+| `helm_uninstall` | リリースの削除 | ✓ confirm 必須 |
 
 ### Lab ユーティリティ ✅
 

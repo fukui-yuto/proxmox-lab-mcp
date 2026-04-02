@@ -155,6 +155,26 @@ def list_tasks(node: str, limit: int = 20) -> list[dict]:
     ]
 
 
+def create_snapshot(node: str, vmid: int, snapname: str, description: str = "", vm_type: str = "qemu") -> str:
+    """VM / LXC のスナップショットを作成する。"""
+    pve = _client()
+    if vm_type == "lxc":
+        pve.nodes(node).lxc(vmid).snapshot.post(snapname=snapname, description=description)
+    else:
+        pve.nodes(node).qemu(vmid).snapshot.post(snapname=snapname, description=description)
+    return f"VMID {vmid} のスナップショット '{snapname}' を作成しました。"
+
+
+def rollback_snapshot(node: str, vmid: int, snapname: str, vm_type: str = "qemu") -> str:
+    """VM / LXC を指定スナップショットにロールバックする。"""
+    pve = _client()
+    if vm_type == "lxc":
+        pve.nodes(node).lxc(vmid).snapshot(snapname).rollback.post()
+    else:
+        pve.nodes(node).qemu(vmid).snapshot(snapname).rollback.post()
+    return f"VMID {vmid} をスナップショット '{snapname}' にロールバックしました。"
+
+
 def list_storage() -> list[dict]:
     """全ノードのストレージ一覧と使用量を返す。"""
     pve = _client()

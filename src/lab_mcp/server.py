@@ -115,6 +115,36 @@ def proxmox_list_tasks(node: str, limit: int = 20) -> str:
     return json.dumps(proxmox.list_tasks(node, limit), ensure_ascii=False, indent=2)
 
 
+@mcp.tool()
+def proxmox_create_snapshot(node: str, vmid: int, snapname: str, description: str = "", vm_type: str = "qemu") -> str:
+    """VM / LXC のスナップショットを作成する。
+
+    Args:
+        node: ノード名
+        vmid: VM ID
+        snapname: スナップショット名
+        description: 説明 (任意)
+        vm_type: "qemu" または "lxc"
+    """
+    return proxmox.create_snapshot(node, vmid, snapname, description, vm_type)
+
+
+@mcp.tool()
+def proxmox_rollback_snapshot(node: str, vmid: int, snapname: str, vm_type: str = "qemu", confirm: bool = False) -> str:
+    """VM / LXC を指定スナップショットにロールバックする。破壊的操作のため confirm=true が必須。
+
+    Args:
+        node: ノード名
+        vmid: VM ID
+        snapname: ロールバック先スナップショット名
+        vm_type: "qemu" または "lxc"
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return proxmox.rollback_snapshot(node, vmid, snapname, vm_type)
+
+
 # ── Terraform ────────────────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -281,6 +311,51 @@ def kubectl_top(resource: str = "nodes", namespace: str = "") -> str:
         namespace: pods の場合の名前空間。省略時は全 namespace
     """
     return kubectl.top(resource, namespace or None)
+
+
+@mcp.tool()
+def kubectl_delete(resource: str, name: str, namespace: str = "", confirm: bool = False) -> str:
+    """kubectl delete <resource> <name> を実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        resource: リソース種別 (例: pod, deployment, pvc)
+        name: リソース名
+        namespace: 名前空間。省略時はデフォルト
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.delete(resource, name, namespace or None)
+
+
+@mcp.tool()
+def helm_upgrade(release: str, chart: str, namespace: str = "default", values_file: str = "", confirm: bool = False) -> str:
+    """helm upgrade --install でリリースをアップグレード／インストールする。破壊的操作のため confirm=true が必須。
+
+    Args:
+        release: リリース名
+        chart: チャート名 (例: bitnami/nginx)
+        namespace: 名前空間 (デフォルト: default)
+        values_file: values ファイルパス (任意)
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.helm_upgrade(release, chart, namespace, values_file)
+
+
+@mcp.tool()
+def helm_uninstall(release: str, namespace: str = "default", confirm: bool = False) -> str:
+    """helm uninstall でリリースを削除する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        release: リリース名
+        namespace: 名前空間 (デフォルト: default)
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.helm_uninstall(release, namespace)
 
 
 # ── Lab ユーティリティ ────────────────────────────────────────────────────────

@@ -61,6 +61,27 @@ def rollout_status(deployment: str, namespace: str = "default") -> str:
     return _run(["kubectl", "rollout", "status", f"deployment/{deployment}", "-n", namespace])
 
 
+def delete(resource: str, name: str, namespace: str | None = None) -> str:
+    """kubectl delete <resource> <name> を実行する。"""
+    args = ["kubectl", "delete", resource, name]
+    if namespace:
+        args += ["-n", namespace]
+    return _run(args)
+
+
+def helm_upgrade(release: str, chart: str, namespace: str = "default", values_file: str = "") -> str:
+    """helm upgrade --install でリリースをアップグレード／インストールする。"""
+    args = ["helm", "upgrade", "--install", release, chart, "-n", namespace]
+    if values_file:
+        args += ["-f", values_file]
+    return _run(args)
+
+
+def helm_uninstall(release: str, namespace: str = "default") -> str:
+    """helm uninstall でリリースを削除する。"""
+    return _run(["helm", "uninstall", release, "-n", namespace])
+
+
 def top(resource: str = "nodes", namespace: str | None = None) -> str:
     """kubectl top nodes / pods でリソース使用量を返す。"""
     args = ["kubectl", "top", resource]
