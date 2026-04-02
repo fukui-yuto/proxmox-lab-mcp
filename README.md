@@ -107,15 +107,27 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `proxmox_rollback_snapshot` | スナップショットへロールバック | ✓ confirm 必須 |
 | `proxmox_list_tasks` | 直近タスク一覧 | ✗ |
 
+### Proxmox 調査系 ✅
+
+| ツール名 | 説明 |
+|---|---|
+| `proxmox_get_vm_config` | VM / LXC の設定詳細（CPU / メモリ / ディスク / ネットワーク） |
+| `proxmox_get_task_log` | タスク UPID のログ取得（list_tasks で得た UPID を指定） |
+| `proxmox_get_cluster_status` | クラスター全体の健全性ステータス |
+| `proxmox_list_networks` | ノードのネットワーク設定一覧 |
+| `proxmox_get_storage_content` | ストレージ内の ISO / テンプレート一覧 |
+
 ### Phase 2: Terraform tools ✅
 
 | ツール名 | 説明 | 破壊的 |
 |---|---|---|
 | `terraform_plan` | terraform plan 実行・差分表示 | ✗ |
+| `terraform_validate` | 構文検証のみ（apply なし） | ✗ |
 | `terraform_state_list` | state 内リソース一覧 | ✗ |
 | `terraform_state_show` | 特定リソースの state 詳細 | ✗ |
 | `terraform_output` | output 値取得 | ✗ |
 | `terraform_apply` | terraform apply 実行 | ✓ confirm 必須 |
+| `terraform_destroy` | terraform destroy 実行 | ✓ confirm 必須 |
 
 ### Phase 3: Ansible tools ✅
 
@@ -123,6 +135,8 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 |---|---|---|
 | `ansible_ping` | 全ホスト疎通確認 | ✗ |
 | `ansible_list_inventory` | インベントリ構成確認 | ✗ |
+| `ansible_run_module` | アドホックモジュール実行（shell, setup 等） | ✗ |
+| `ansible_get_facts` | ホストの facts 収集（OS / ハードウェア情報） | ✗ |
 | `ansible_run_playbook` | playbook 実行 | ✓ confirm 必須 |
 
 ### Phase 4: kubectl / Helm tools ✅
@@ -132,6 +146,12 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `kubectl_get` | kubectl get \<resource\> | ✗ |
 | `kubectl_describe` | kubectl describe \<resource\> \<name\> | ✗ |
 | `kubectl_logs` | Pod ログ取得 | ✗ |
+| `kubectl_exec` | Pod 内コマンド実行（シェル調査・疎通確認等） | ✗ |
+| `kubectl_get_events` | Namespace / Pod のイベント一覧（障害原因特定） | ✗ |
+| `kubectl_get_secret` | Secret 内容確認（値はマスク表示） | ✗ |
+| `kubectl_get_configmap` | ConfigMap 内容確認 | ✗ |
+| `kubectl_run` | 一時 Pod でコマンド実行（Pod は自動削除） | ✗ |
+| `kubectl_port_forward` | ローカルへのポートフォワード（バックグラウンド実行） | ✗ |
 | `kubectl_apply` | マニフェスト apply | ✓ confirm 必須 |
 | `kubectl_delete` | リソース削除 | ✓ confirm 必須 |
 | `kubectl_rollout_status` | Deployment ロールアウト状態 | ✗ |
@@ -147,6 +167,8 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 |---|---|
 | `lab_ping` | Raspberry Pi から疎通確認 |
 | `lab_wakeup` | Wake-on-LAN でホスト起動 |
+| `lab_exec` | SSH 経由で VM / ホスト上のコマンドを直接実行 |
+| `lab_check_port` | ポート開閉・疎通の確認 |
 
 ## 安全設計
 
