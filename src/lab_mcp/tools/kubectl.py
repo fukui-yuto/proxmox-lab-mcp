@@ -90,3 +90,66 @@ def top(resource: str = "nodes", namespace: str | None = None) -> str:
     elif resource == "pods":
         args += ["--all-namespaces"]
     return _run(args)
+
+
+def exec(pod: str, command: str, namespace: str = "default", container: str = "") -> str:
+    """kubectl exec で Pod 内コマンドを実行する。"""
+    import shlex
+    args = ["kubectl", "exec", pod, "-n", namespace]
+    if container:
+        args += ["-c", container]
+    args += ["--"] + shlex.split(command)
+    return _run(args)
+
+
+def get_events(namespace: str | None = None, field_selector: str = "") -> str:
+    """Namespace / Pod のイベント一覧を返す。"""
+    args = ["kubectl", "get", "events", "--sort-by=.lastTimestamp"]
+    if namespace:
+        args += ["-n", namespace]
+    else:
+        args += ["--all-namespaces"]
+    if field_selector:
+        args += [f"--field-selector={field_selector}"]
+    return _run(args)
+
+
+def get_secret(name: str, namespace: str = "default") -> str:
+    """Secret の内容をマスク付きで返す。"""
+    import json
+    result = _run(["kubectl", "get", "secret", name, "-n", namespace, "-o", "json"])
+    try:
+        data = json.loads(result)
+        if "data" in data:
+            data["data"] = {k: "***" for k in data["data"]}
+        return json.dumps(data, ensure_ascii=False, indent=2)
+    except Exception:
+        return result
+
+
+def get_configmap(name: str, namespace: str = "default") -> str:
+    """ConfigMap の内容を返す。"""
+    return _run(["kubectl", "get", "configmap", name, "-n", namespace, "-o", "yaml"])
+
+
+def run_pod(image: str, command: str, namespace: str = "default") -> str:
+    """一時 Pod でコマンドを実行し、出力を返す（Pod は自動削除）。"""
+    import shlex, time
+    pod_name = f"debug-{int(time.time())}"
+    args = ["kubectl", "run", pod_name, f"--image={image}", "-n", namespace,
+            "--restart=Never", "--rm", "--attach",
+            "--"] + shlex.split(command)
+    return _run(args)
+
+
+def port_forward(resource: str, ports: str, namespace: str = "default") -> str:
+    """kubectl port-forward をバックグラウンドで開始する。"""
+    import os
+    env = {**os.environ, "KUBECONFIG": config.KUBECONFIG}
+    proc = subprocess.Popen(
+        ["kubectl", "port-forward", resource, ports, "-n", namespace],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    return f"ポートフォワードを開始しました。PID: {proc.pid}, リソース: {resource}, ポート: {ports}\n終了するには kill {proc.pid} を実行してください。"

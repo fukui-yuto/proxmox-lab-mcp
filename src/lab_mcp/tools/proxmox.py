@@ -192,3 +192,49 @@ def list_storage() -> list[dict]:
                 "used_pct": round(s.get("used_fraction", 0) * 100, 1),
             })
     return result
+
+
+def get_vm_config(node: str, vmid: int, vm_type: str = "qemu") -> dict:
+    """VM / LXC の設定詳細（CPU / メモリ / ディスク / ネットワーク）を返す。"""
+    pve = _client()
+    if vm_type == "lxc":
+        cfg = pve.nodes(node).lxc(vmid).config.get()
+    else:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+    return cfg
+
+
+def get_task_log(node: str, upid: str) -> list[dict]:
+    """タスク UPID のログを返す。"""
+    pve = _client()
+    return pve.nodes(node).tasks(upid).log.get()
+
+
+def get_cluster_status() -> list[dict]:
+    """クラスター全体の健全性ステータスを返す。"""
+    pve = _client()
+    return pve.cluster.status.get()
+
+
+def list_networks(node: str) -> list[dict]:
+    """ノードのネットワーク設定一覧を返す。"""
+    pve = _client()
+    return pve.nodes(node).network.get()
+
+
+def get_storage_content(node: str, storage: str, content_type: str = "") -> list[dict]:
+    """ストレージ内のコンテンツ（ISO / テンプレート等）一覧を返す。"""
+    pve = _client()
+    params = {}
+    if content_type:
+        params["content"] = content_type
+    items = pve.nodes(node).storage(storage).content.get(**params)
+    return [
+        {
+            "volid": i.get("volid"),
+            "content": i.get("content"),
+            "format": i.get("format"),
+            "size_gb": round(i.get("size", 0) / 1024**3, 2),
+        }
+        for i in items
+    ]

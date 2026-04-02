@@ -21,5 +21,8 @@ TERRAFORM_DIR = os.getenv("TERRAFORM_DIR", "")
 ANSIBLE_DIR = os.getenv("ANSIBLE_DIR", "")
 KUBECONFIG = os.getenv("KUBECONFIG", os.path.expanduser("~/.kube/config"))
 
+SSH_USER = os.getenv("SSH_USER", "")
+SSH_KEY = os.getenv("SSH_KEY", "")
+
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8000"))

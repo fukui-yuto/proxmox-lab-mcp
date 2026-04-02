@@ -36,3 +36,13 @@ def output() -> str:
 def apply() -> str:
     """terraform apply を実行する（confirm 必須）。"""
     return _run(["apply", "-auto-approve", "-no-color"])
+
+
+def validate() -> str:
+    """terraform validate で構文検証を行う。"""
+    return _run(["validate", "-no-color"])
+
+
+def destroy() -> str:
+    """terraform destroy を実行する（confirm 必須）。"""
+    return _run(["destroy", "-auto-approve", "-no-color"])

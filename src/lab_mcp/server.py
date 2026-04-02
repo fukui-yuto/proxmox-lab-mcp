@@ -358,6 +358,175 @@ def helm_uninstall(release: str, namespace: str = "default", confirm: bool = Fal
     return kubectl.helm_uninstall(release, namespace)
 
 
+# ── kubectl 調査系（追加） ────────────────────────────────────────────────────
+
+@mcp.tool()
+def kubectl_exec(pod: str, command: str, namespace: str = "default", container: str = "") -> str:
+    """Pod 内でコマンドを実行する（シェル調査・疎通確認等）。
+
+    Args:
+        pod: Pod 名
+        command: 実行するコマンド (例: "ls -la /tmp", "cat /etc/hosts")
+        namespace: 名前空間 (デフォルト: default)
+        container: コンテナ名（複数コンテナ Pod の場合に指定）
+    """
+    return kubectl.exec(pod, command, namespace, container)
+
+
+@mcp.tool()
+def kubectl_get_events(namespace: str = "", field_selector: str = "") -> str:
+    """Namespace / Pod のイベント一覧を返す（障害原因特定に有効）。
+
+    Args:
+        namespace: 名前空間。省略時は全 namespace
+        field_selector: フィールドセレクタ (例: involvedObject.name=my-pod)
+    """
+    return kubectl.get_events(namespace or None, field_selector)
+
+
+@mcp.tool()
+def kubectl_get_secret(name: str, namespace: str = "default") -> str:
+    """Secret の内容をマスク付きで返す（値は *** に置換）。
+
+    Args:
+        name: Secret 名
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.get_secret(name, namespace)
+
+
+@mcp.tool()
+def kubectl_get_configmap(name: str, namespace: str = "default") -> str:
+    """ConfigMap の内容を返す。
+
+    Args:
+        name: ConfigMap 名
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.get_configmap(name, namespace)
+
+
+@mcp.tool()
+def kubectl_run(image: str, command: str, namespace: str = "default") -> str:
+    """一時 Pod でコマンドを実行して出力を返す（Pod は自動削除）。
+
+    Args:
+        image: コンテナイメージ (例: busybox, curlimages/curl)
+        command: 実行するコマンド (例: "nslookup kubernetes.default")
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.run_pod(image, command, namespace)
+
+
+@mcp.tool()
+def kubectl_port_forward(resource: str, ports: str, namespace: str = "default") -> str:
+    """kubectl port-forward をバックグラウンドで開始する。
+
+    Args:
+        resource: 転送先リソース (例: pod/my-pod, svc/my-svc, deployment/my-deploy)
+        ports: ポートマッピング (例: 8080:80, 5432:5432)
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.port_forward(resource, ports, namespace)
+
+
+# ── Proxmox 調査系（追加） ────────────────────────────────────────────────────
+
+@mcp.tool()
+def proxmox_get_vm_config(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC の設定詳細（CPU / メモリ / ディスク / ネットワーク）を返す。
+
+    Args:
+        node: ノード名 (例: pve1)
+        vmid: VM ID
+        vm_type: "qemu" または "lxc"
+    """
+    return json.dumps(proxmox.get_vm_config(node, vmid, vm_type), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_get_task_log(node: str, upid: str) -> str:
+    """タスク UPID のログを返す（proxmox_list_tasks で取得した UPID を指定）。
+
+    Args:
+        node: ノード名
+        upid: タスク UPID (例: UPID:pve1:00001234:...)
+    """
+    return json.dumps(proxmox.get_task_log(node, upid), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_get_cluster_status() -> str:
+    """Proxmox クラスター全体の健全性ステータスを返す。"""
+    return json.dumps(proxmox.get_cluster_status(), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_list_networks(node: str) -> str:
+    """ノードのネットワーク設定一覧を返す。
+
+    Args:
+        node: ノード名 (例: pve1)
+    """
+    return json.dumps(proxmox.list_networks(node), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_get_storage_content(node: str, storage: str, content_type: str = "") -> str:
+    """ストレージ内のコンテンツ（ISO / テンプレート等）一覧を返す。
+
+    Args:
+        node: ノード名
+        storage: ストレージ名 (例: local, local-lvm)
+        content_type: コンテンツ種別フィルタ (例: iso, vztmpl, images)。省略時は全種別
+    """
+    return json.dumps(proxmox.get_storage_content(node, storage, content_type), ensure_ascii=False, indent=2)
+
+
+# ── Ansible 追加 ──────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def ansible_run_module(hosts: str, module: str, args: str = "") -> str:
+    """アドホックモジュールを実行する（ping 以外の任意モジュール）。
+
+    Args:
+        hosts: 対象ホスト/グループ (例: all, webservers, 192.168.1.10)
+        module: モジュール名 (例: shell, command, setup, copy, file)
+        args: モジュール引数 (例: "cmd='uptime'", "src=/tmp/a dest=/tmp/b")
+    """
+    return ansible.run_module(hosts, module, args)
+
+
+@mcp.tool()
+def ansible_get_facts(hosts: str = "all") -> str:
+    """ホストの facts（OS / ハードウェア情報）を収集して返す。
+
+    Args:
+        hosts: 対象ホスト/グループ (デフォルト: all)
+    """
+    return ansible.get_facts(hosts)
+
+
+# ── Terraform 追加 ────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def terraform_validate() -> str:
+    """terraform validate で構文検証を行う（apply なし）。TERRAFORM_DIR で実行される。"""
+    return terraform.validate()
+
+
+@mcp.tool()
+def terraform_destroy(confirm: bool = False) -> str:
+    """terraform destroy を実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return terraform.destroy()
+
+
 # ── Lab ユーティリティ ────────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -380,6 +549,31 @@ def lab_wakeup(mac: str, broadcast: str = "192.168.210.255") -> str:
         broadcast: ブロードキャストアドレス (デフォルト: 192.168.210.255)
     """
     return lab.wakeup(mac, broadcast)
+
+
+@mcp.tool()
+def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "") -> str:
+    """SSH 経由で VM / ホスト上のコマンドを直接実行する。
+
+    Args:
+        host: 接続先ホスト名または IP アドレス
+        command: 実行するコマンド (例: "df -h", "systemctl status nginx")
+        user: SSH ユーザー名（省略時は SSH_USER 環境変数）
+        ssh_key: SSH 秘密鍵パス（省略時は SSH_KEY 環境変数）
+    """
+    return lab.exec(host, command, user, ssh_key)
+
+
+@mcp.tool()
+def lab_check_port(host: str, port: int, timeout: float = 3.0) -> str:
+    """指定ホスト・ポートの開閉・疎通を確認する。
+
+    Args:
+        host: ホスト名または IP アドレス
+        port: ポート番号
+        timeout: タイムアウト秒数 (デフォルト: 3.0)
+    """
+    return lab.check_port(host, port, timeout)
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
