@@ -1,7 +1,7 @@
 import json
 from mcp.server.fastmcp import FastMCP
 from lab_mcp import config
-from lab_mcp.tools import proxmox, terraform, ansible
+from lab_mcp.tools import proxmox, terraform, ansible, kubectl
 
 mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 
@@ -119,6 +119,64 @@ def ansible_run_playbook(playbook: str, confirm: bool = False) -> str:
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
     return ansible.run_playbook(playbook)
+
+
+# ── kubectl / Helm ───────────────────────────────────────────────────────────
+
+@mcp.tool()
+def kubectl_get(resource: str, namespace: str = "") -> str:
+    """kubectl get <resource> を実行する。
+
+    Args:
+        resource: リソース種別 (例: pods, nodes, deployments)
+        namespace: 名前空間。省略時は全 namespace
+    """
+    return kubectl.get(resource, namespace or None)
+
+
+@mcp.tool()
+def kubectl_describe(resource: str, name: str, namespace: str = "") -> str:
+    """kubectl describe <resource> <name> を実行する。
+
+    Args:
+        resource: リソース種別 (例: pod, node, deployment)
+        name: リソース名
+        namespace: 名前空間。省略時はデフォルト
+    """
+    return kubectl.describe(resource, name, namespace or None)
+
+
+@mcp.tool()
+def kubectl_logs(pod: str, namespace: str = "default", tail: int = 100) -> str:
+    """Pod のログを取得する。
+
+    Args:
+        pod: Pod 名
+        namespace: 名前空間 (デフォルト: default)
+        tail: 末尾から取得する行数 (デフォルト: 100)
+    """
+    return kubectl.logs(pod, namespace, tail)
+
+
+@mcp.tool()
+def helm_list(namespace: str = "") -> str:
+    """Helm リリース一覧を返す。
+
+    Args:
+        namespace: 名前空間。省略時は全 namespace
+    """
+    return kubectl.helm_list(namespace or None)
+
+
+@mcp.tool()
+def helm_get_values(release: str, namespace: str = "default") -> str:
+    """指定 Helm リリースの values を返す。
+
+    Args:
+        release: リリース名
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.helm_get_values(release, namespace)
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
