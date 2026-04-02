@@ -14,7 +14,7 @@ source $HOME/.local/bin/env
 ### 2. リポジトリの配置
 
 ```bash
-git clone https://github.com/<your-user>/proxmox-lab-mcp.git ~/proxmox-lab-mcp
+git clone https://github.com/fukui-yuto/proxmox-lab-mcp.git ~/proxmox-lab-mcp
 cd ~/proxmox-lab-mcp
 ```
 
