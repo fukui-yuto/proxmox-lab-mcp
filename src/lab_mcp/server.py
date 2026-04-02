@@ -1,7 +1,7 @@
 import json
 from mcp.server.fastmcp import FastMCP
 from lab_mcp import config
-from lab_mcp.tools import proxmox
+from lab_mcp.tools import proxmox, terraform
 
 mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 
@@ -46,6 +46,48 @@ def proxmox_get_node_resources(node: str) -> str:
 def proxmox_list_storage() -> str:
     """全ノードのストレージプール一覧と使用量を返す。"""
     return json.dumps(proxmox.list_storage(), ensure_ascii=False, indent=2)
+
+
+# ── Terraform ────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def terraform_plan() -> str:
+    """terraform plan を実行して差分を返す。TERRAFORM_DIR で実行される。"""
+    return terraform.plan()
+
+
+@mcp.tool()
+def terraform_state_list() -> str:
+    """terraform state list を実行して管理中のリソース一覧を返す。"""
+    return terraform.state_list()
+
+
+@mcp.tool()
+def terraform_state_show(resource: str) -> str:
+    """指定リソースの terraform state show を返す。
+
+    Args:
+        resource: リソースアドレス (例: proxmox_vm_qemu.k3s_node[0])
+    """
+    return terraform.state_show(resource)
+
+
+@mcp.tool()
+def terraform_output() -> str:
+    """terraform output を返す。"""
+    return terraform.output()
+
+
+@mcp.tool()
+def terraform_apply(confirm: bool = False) -> str:
+    """terraform apply を実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return terraform.apply()
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
