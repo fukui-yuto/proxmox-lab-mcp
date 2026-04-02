@@ -3,7 +3,7 @@ from mcp.server.fastmcp import FastMCP
 from lab_mcp import config
 from lab_mcp.tools import proxmox
 
-mcp = FastMCP("proxmox-lab")
+mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 
 
 # ── Proxmox ──────────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ def proxmox_list_storage() -> str:
 # ── エントリポイント ──────────────────────────────────────────────────────────
 
 def main() -> None:
-    mcp.run(transport="sse", host=config.MCP_HOST, port=config.MCP_PORT)
+    mcp.run(transport="sse")
 
 
 if __name__ == "__main__":
