@@ -95,6 +95,16 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `proxmox_get_node_resources` | ノードのリソース使用量 |
 | `proxmox_list_storage` | ストレージプール一覧・使用量 |
 
+### Proxmox 操作系 ✅
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `proxmox_start_vm` | VM / LXC 起動 | ✗ |
+| `proxmox_stop_vm` | VM / LXC 停止 | ✓ confirm 必須 |
+| `proxmox_reboot_vm` | VM / LXC 再起動 | ✓ confirm 必須 |
+| `proxmox_list_snapshots` | スナップショット一覧 | ✗ |
+| `proxmox_list_tasks` | 直近タスク一覧 | ✗ |
+
 ### Phase 2: Terraform tools ✅
 
 | ツール名 | 説明 | 破壊的 |
@@ -115,13 +125,23 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 
 ### Phase 4: kubectl / Helm tools ✅
 
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `kubectl_get` | kubectl get \<resource\> | ✗ |
+| `kubectl_describe` | kubectl describe \<resource\> \<name\> | ✗ |
+| `kubectl_logs` | Pod ログ取得 | ✗ |
+| `kubectl_apply` | マニフェスト apply | ✓ confirm 必須 |
+| `kubectl_rollout_status` | Deployment ロールアウト状態 | ✗ |
+| `kubectl_top` | Node / Pod リソース使用量 | ✗ |
+| `helm_list` | Helm リリース一覧 | ✗ |
+| `helm_get_values` | リリースの values 確認 | ✗ |
+
+### Lab ユーティリティ ✅
+
 | ツール名 | 説明 |
 |---|---|
-| `kubectl_get` | kubectl get \<resource\> |
-| `kubectl_describe` | kubectl describe \<resource\> \<name\> |
-| `kubectl_logs` | Pod ログ取得 |
-| `helm_list` | Helm リリース一覧 |
-| `helm_get_values` | リリースの values 確認 |
+| `lab_ping` | Raspberry Pi から疎通確認 |
+| `lab_wakeup` | Wake-on-LAN でホスト起動 |
 
 ## 安全設計
 

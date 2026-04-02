@@ -1,7 +1,7 @@
 import json
 from mcp.server.fastmcp import FastMCP
 from lab_mcp import config
-from lab_mcp.tools import proxmox, terraform, ansible, kubectl
+from lab_mcp.tools import proxmox, terraform, ansible, kubectl, lab
 
 mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 
@@ -46,6 +46,73 @@ def proxmox_get_node_resources(node: str) -> str:
 def proxmox_list_storage() -> str:
     """全ノードのストレージプール一覧と使用量を返す。"""
     return json.dumps(proxmox.list_storage(), ensure_ascii=False, indent=2)
+
+
+# ── Proxmox 操作系 ───────────────────────────────────────────────────────────
+
+@mcp.tool()
+def proxmox_start_vm(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC を起動する。
+
+    Args:
+        node: ノード名 (例: pve-node01)
+        vmid: VM ID
+        vm_type: "qemu" または "lxc"
+    """
+    return proxmox.start_vm(node, vmid, vm_type)
+
+
+@mcp.tool()
+def proxmox_stop_vm(node: str, vmid: int, vm_type: str = "qemu", confirm: bool = False) -> str:
+    """VM / LXC を停止する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        node: ノード名
+        vmid: VM ID
+        vm_type: "qemu" または "lxc"
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return proxmox.stop_vm(node, vmid, vm_type)
+
+
+@mcp.tool()
+def proxmox_reboot_vm(node: str, vmid: int, vm_type: str = "qemu", confirm: bool = False) -> str:
+    """VM / LXC を再起動する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        node: ノード名
+        vmid: VM ID
+        vm_type: "qemu" または "lxc"
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return proxmox.reboot_vm(node, vmid, vm_type)
+
+
+@mcp.tool()
+def proxmox_list_snapshots(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC のスナップショット一覧を返す。
+
+    Args:
+        node: ノード名
+        vmid: VM ID
+        vm_type: "qemu" または "lxc"
+    """
+    return json.dumps(proxmox.list_snapshots(node, vmid, vm_type), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_list_tasks(node: str, limit: int = 20) -> str:
+    """ノードの直近タスク一覧を返す。
+
+    Args:
+        node: ノード名
+        limit: 取得件数 (デフォルト: 20)
+    """
+    return json.dumps(proxmox.list_tasks(node, limit), ensure_ascii=False, indent=2)
 
 
 # ── Terraform ────────────────────────────────────────────────────────────────
@@ -177,6 +244,67 @@ def helm_get_values(release: str, namespace: str = "default") -> str:
         namespace: 名前空間 (デフォルト: default)
     """
     return kubectl.helm_get_values(release, namespace)
+
+
+# ── kubectl 操作系 ───────────────────────────────────────────────────────────
+
+@mcp.tool()
+def kubectl_apply(manifest: str, confirm: bool = False) -> str:
+    """kubectl apply -f <manifest> を実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        manifest: マニフェストファイルパス または URL
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.apply(manifest)
+
+
+@mcp.tool()
+def kubectl_rollout_status(deployment: str, namespace: str = "default") -> str:
+    """Deployment のロールアウト状態を返す。
+
+    Args:
+        deployment: Deployment 名
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.rollout_status(deployment, namespace)
+
+
+@mcp.tool()
+def kubectl_top(resource: str = "nodes", namespace: str = "") -> str:
+    """Node / Pod のリソース使用量を返す。
+
+    Args:
+        resource: "nodes" または "pods" (デフォルト: nodes)
+        namespace: pods の場合の名前空間。省略時は全 namespace
+    """
+    return kubectl.top(resource, namespace or None)
+
+
+# ── Lab ユーティリティ ────────────────────────────────────────────────────────
+
+@mcp.tool()
+def lab_ping(host: str, count: int = 4) -> str:
+    """Raspberry Pi から指定ホストへの疎通確認を行う。
+
+    Args:
+        host: ホスト名または IP アドレス
+        count: ping 回数 (デフォルト: 4)
+    """
+    return lab.ping(host, count)
+
+
+@mcp.tool()
+def lab_wakeup(mac: str, broadcast: str = "192.168.210.255") -> str:
+    """Wake-on-LAN でホストを起動する。
+
+    Args:
+        mac: MAC アドレス (例: AA:BB:CC:DD:EE:FF)
+        broadcast: ブロードキャストアドレス (デフォルト: 192.168.210.255)
+    """
+    return lab.wakeup(mac, broadcast)
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────

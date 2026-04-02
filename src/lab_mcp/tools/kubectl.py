@@ -49,3 +49,23 @@ def helm_list(namespace: str | None = None) -> str:
 def helm_get_values(release: str, namespace: str = "default") -> str:
     """helm get values で指定リリースの values を返す。"""
     return _run(["helm", "get", "values", release, "-n", namespace])
+
+
+def apply(manifest: str) -> str:
+    """kubectl apply -f <manifest> を実行する。"""
+    return _run(["kubectl", "apply", "-f", manifest])
+
+
+def rollout_status(deployment: str, namespace: str = "default") -> str:
+    """Deployment のロールアウト状態を返す。"""
+    return _run(["kubectl", "rollout", "status", f"deployment/{deployment}", "-n", namespace])
+
+
+def top(resource: str = "nodes", namespace: str | None = None) -> str:
+    """kubectl top nodes / pods でリソース使用量を返す。"""
+    args = ["kubectl", "top", resource]
+    if namespace and resource == "pods":
+        args += ["-n", namespace]
+    elif resource == "pods":
+        args += ["--all-namespaces"]
+    return _run(args)

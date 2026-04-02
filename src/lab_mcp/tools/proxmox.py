@@ -92,6 +92,69 @@ def get_node_resources(node: str) -> dict:
     }
 
 
+def start_vm(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC を起動する。"""
+    pve = _client()
+    if vm_type == "lxc":
+        pve.nodes(node).lxc(vmid).status.start.post()
+    else:
+        pve.nodes(node).qemu(vmid).status.start.post()
+    return f"VMID {vmid} の起動を開始しました。"
+
+
+def stop_vm(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC を停止する。"""
+    pve = _client()
+    if vm_type == "lxc":
+        pve.nodes(node).lxc(vmid).status.stop.post()
+    else:
+        pve.nodes(node).qemu(vmid).status.stop.post()
+    return f"VMID {vmid} の停止を開始しました。"
+
+
+def reboot_vm(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC を再起動する。"""
+    pve = _client()
+    if vm_type == "lxc":
+        pve.nodes(node).lxc(vmid).status.reboot.post()
+    else:
+        pve.nodes(node).qemu(vmid).status.reboot.post()
+    return f"VMID {vmid} の再起動を開始しました。"
+
+
+def list_snapshots(node: str, vmid: int, vm_type: str = "qemu") -> list[dict]:
+    """VM / LXC のスナップショット一覧を返す。"""
+    pve = _client()
+    if vm_type == "lxc":
+        snaps = pve.nodes(node).lxc(vmid).snapshot.get()
+    else:
+        snaps = pve.nodes(node).qemu(vmid).snapshot.get()
+    return [
+        {
+            "name": s.get("name"),
+            "description": s.get("description", ""),
+            "snaptime": s.get("snaptime"),
+        }
+        for s in snaps
+    ]
+
+
+def list_tasks(node: str, limit: int = 20) -> list[dict]:
+    """ノードの直近タスク一覧を返す。"""
+    pve = _client()
+    tasks = pve.nodes(node).tasks.get(limit=limit)
+    return [
+        {
+            "upid": t.get("upid"),
+            "type": t.get("type"),
+            "status": t.get("status"),
+            "user": t.get("user"),
+            "starttime": t.get("starttime"),
+        }
+        for t in tasks
+    ]
+
+
 def list_storage() -> list[dict]:
     """全ノードのストレージ一覧と使用量を返す。"""
     pve = _client()
