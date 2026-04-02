@@ -1,6 +1,19 @@
 # proxmox-lab-mcp
 
-Proxmox ホームラボ管理用 MCP サーバー。Raspberry Pi 上で稼働し、Claude Code から HTTP/SSE で接続する。
+Proxmox ホームラボ管理用 MCP サーバー。Raspberry Pi 5 (Ubuntu 24) 上で稼働し、Claude Code から HTTP/SSE で接続する。
+
+## 構成
+
+```
+Claude Code (Windows)
+    │  HTTP/SSE  http://192.168.210.55:8000/sse
+    ▼
+Raspberry Pi 5 (Ubuntu 24) ← MCP Server
+    ├── proxmoxer  → Proxmox API (LAN)
+    ├── terraform CLI (ネイティブ実行)
+    ├── ansible CLI (ネイティブ実行)
+    └── kubectl (kubeconfig)
+```
 
 ## セットアップ（Raspberry Pi 上）
 
@@ -25,7 +38,7 @@ cp .env.example .env
 vi .env  # Proxmox の接続情報を記入
 ```
 
-### 4. 依存パッケージのインストールと起動確認
+### 4. 起動確認
 
 ```bash
 uv run lab-mcp
@@ -54,6 +67,7 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now proxmox-lab-mcp
+sudo systemctl status proxmox-lab-mcp
 ```
 
 ## Proxmox API トークン作成
@@ -65,24 +79,58 @@ Proxmox Web UI → Datacenter → Permissions → API Tokens で作成:
 
 ## Claude Code への登録
 
-`~/.claude/settings.json` に追記：
-
-```json
-{
-  "mcpServers": {
-    "proxmox-lab": {
-      "type": "sse",
-      "url": "http://<pi-ip>:8000/sse"
-    }
-  }
-}
+```bash
+claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 ```
 
-## 実装フェーズ
+## 利用可能なツール
 
-| フェーズ | スコープ | 状態 |
+### Phase 1: Proxmox 読み取り系 ✅
+
+| ツール名 | 説明 |
+|---|---|
+| `proxmox_list_nodes` | ノード一覧・CPU/メモリ/稼働状態 |
+| `proxmox_list_vms` | 全ノードの VM/LXC 一覧 |
+| `proxmox_get_vm_status` | 特定 VM の詳細状態 |
+| `proxmox_get_node_resources` | ノードのリソース使用量 |
+| `proxmox_list_storage` | ストレージプール一覧・使用量 |
+
+### Phase 2: Terraform tools 🔲
+
+| ツール名 | 説明 | 破壊的 |
 |---|---|---|
-| Phase 1 | Proxmox 読み取り系 | ✅ 実装済み |
-| Phase 2 | Terraform plan / state | 未実装 |
-| Phase 3 | Ansible ping / inventory | 未実装 |
-| Phase 4 | 破壊的操作 (apply/playbook) | 未実装 |
+| `terraform_plan` | terraform plan 実行・差分表示 | ✗ |
+| `terraform_state_list` | state 内リソース一覧 | ✗ |
+| `terraform_state_show` | 特定リソースの state 詳細 | ✗ |
+| `terraform_output` | output 値取得 | ✗ |
+| `terraform_apply` | terraform apply 実行 | ✓ confirm 必須 |
+
+### Phase 3: Ansible tools 🔲
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `ansible_ping` | 全ホスト疎通確認 | ✗ |
+| `ansible_list_inventory` | インベントリ構成確認 | ✗ |
+| `ansible_run_playbook` | playbook 実行 | ✓ confirm 必須 |
+
+### Phase 4: kubectl / Helm tools 🔲
+
+| ツール名 | 説明 |
+|---|---|
+| `kubectl_get` | kubectl get \<resource\> |
+| `kubectl_describe` | kubectl describe \<resource\> \<name\> |
+| `kubectl_logs` | Pod ログ取得 |
+| `helm_list` | Helm リリース一覧 |
+| `helm_get_values` | リリースの values 確認 |
+
+## 安全設計
+
+破壊的操作には `confirm: bool` パラメータを必須化：
+
+```python
+@mcp.tool()
+def terraform_apply(confirm: bool = False) -> str:
+    if not confirm:
+        return "ERROR: confirm=true を明示してください"
+    # 実行
+```
