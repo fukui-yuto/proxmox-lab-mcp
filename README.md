@@ -95,7 +95,7 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `proxmox_get_node_resources` | ノードのリソース使用量 |
 | `proxmox_list_storage` | ストレージプール一覧・使用量 |
 
-### Phase 2: Terraform tools 🔲
+### Phase 2: Terraform tools ✅
 
 | ツール名 | 説明 | 破壊的 |
 |---|---|---|
@@ -105,7 +105,7 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `terraform_output` | output 値取得 | ✗ |
 | `terraform_apply` | terraform apply 実行 | ✓ confirm 必須 |
 
-### Phase 3: Ansible tools 🔲
+### Phase 3: Ansible tools ✅
 
 | ツール名 | 説明 | 破壊的 |
 |---|---|---|
@@ -113,7 +113,7 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `ansible_list_inventory` | インベントリ構成確認 | ✗ |
 | `ansible_run_playbook` | playbook 実行 | ✓ confirm 必須 |
 
-### Phase 4: kubectl / Helm tools 🔲
+### Phase 4: kubectl / Helm tools ✅
 
 | ツール名 | 説明 |
 |---|---|
