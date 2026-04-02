@@ -1,7 +1,7 @@
 import json
 from mcp.server.fastmcp import FastMCP
 from lab_mcp import config
-from lab_mcp.tools import proxmox, terraform
+from lab_mcp.tools import proxmox, terraform, ansible
 
 mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 
@@ -88,6 +88,37 @@ def terraform_apply(confirm: bool = False) -> str:
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
     return terraform.apply()
+
+
+# ── Ansible ──────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def ansible_ping(hosts: str = "all") -> str:
+    """ansible ping で疎通確認する。ANSIBLE_DIR で実行される。
+
+    Args:
+        hosts: 対象ホスト/グループ (デフォルト: all)
+    """
+    return ansible.ping(hosts)
+
+
+@mcp.tool()
+def ansible_list_inventory() -> str:
+    """インベントリのホスト構成を YAML で返す。"""
+    return ansible.list_inventory()
+
+
+@mcp.tool()
+def ansible_run_playbook(playbook: str, confirm: bool = False) -> str:
+    """指定 playbook を実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        playbook: playbook ファイルパス (例: site.yml)
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return ansible.run_playbook(playbook)
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
