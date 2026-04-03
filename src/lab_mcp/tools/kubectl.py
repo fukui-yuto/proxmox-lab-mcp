@@ -13,13 +13,15 @@ def _run(args: list[str]) -> str:
     return (result.stdout + result.stderr).strip()
 
 
-def get(resource: str, namespace: str | None = None) -> str:
+def get(resource: str, namespace: str | None = None, label_selector: str = "", output: str = "wide") -> str:
     """kubectl get <resource> を実行する。"""
-    args = ["kubectl", "get", resource, "-o", "wide"]
+    args = ["kubectl", "get", resource, "-o", output]
     if namespace:
         args += ["-n", namespace]
     else:
         args += ["--all-namespaces"]
+    if label_selector:
+        args += ["-l", label_selector]
     return _run(args)
 
 
@@ -31,9 +33,17 @@ def describe(resource: str, name: str, namespace: str | None = None) -> str:
     return _run(args)
 
 
-def logs(pod: str, namespace: str = "default", tail: int = 100) -> str:
+def logs(pod: str, namespace: str = "default", tail: int = 100,
+         previous: bool = False, container: str = "", since: str = "") -> str:
     """kubectl logs で Pod のログを取得する。"""
-    return _run(["kubectl", "logs", pod, "-n", namespace, f"--tail={tail}"])
+    args = ["kubectl", "logs", pod, "-n", namespace, f"--tail={tail}"]
+    if previous:
+        args += ["--previous"]
+    if container:
+        args += ["-c", container]
+    if since:
+        args += [f"--since={since}"]
+    return _run(args)
 
 
 def helm_list(namespace: str | None = None) -> str:

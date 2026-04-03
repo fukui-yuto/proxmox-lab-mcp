@@ -55,6 +55,21 @@ def exec(host: str, command: str, user: str = "", ssh_key: str = "") -> str:
     return (result.stdout + result.stderr).strip()
 
 
+def dns_lookup(host: str, server: str = "") -> str:
+    """DNS 名前解決を行う（dig / nslookup）。
+
+    Args:
+        host: 解決するホスト名または IP
+        server: 問い合わせ先 DNS サーバー（省略時はシステムデフォルト）
+    """
+    args = ["dig", "+short", host]
+    if server:
+        args += [f"@{server}"]
+    result = subprocess.run(args, capture_output=True, text=True)
+    output = (result.stdout + result.stderr).strip()
+    return output if output else f"{host} の解決結果が空です（未解決または NXDOMAIN）"
+
+
 def check_port(host: str, port: int, timeout: float = 3.0) -> str:
     """指定ホスト・ポートの疎通確認を行う。"""
     try:

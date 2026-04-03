@@ -222,6 +222,64 @@ def list_networks(node: str) -> list[dict]:
     return pve.nodes(node).network.get()
 
 
+def get_replication_status(node: str) -> list[dict]:
+    """ノードの ZFS レプリケーションジョブの状態一覧を返す。"""
+    pve = _client()
+    jobs = pve.nodes(node).replication.get()
+    return [
+        {
+            "id": j.get("id"),
+            "target": j.get("target"),
+            "vmid": j.get("guest"),
+            "type": j.get("type"),
+            "enabled": j.get("enabled", 1),
+            "last_sync": j.get("last_sync"),
+            "last_try": j.get("last_try"),
+            "fail_count": j.get("fail_count", 0),
+            "error": j.get("error", ""),
+        }
+        for j in jobs
+    ]
+
+
+def get_backup_jobs(node: str, limit: int = 20) -> list[dict]:
+    """vzdump バックアップタスクの履歴を返す。"""
+    pve = _client()
+    tasks = pve.nodes(node).tasks.get(limit=limit, typefilter="vzdump")
+    return [
+        {
+            "upid": t.get("upid"),
+            "status": t.get("status"),
+            "starttime": t.get("starttime"),
+            "endtime": t.get("endtime"),
+            "user": t.get("user"),
+        }
+        for t in tasks
+    ]
+
+
+def get_certificate_info(node: str) -> list[dict]:
+    """ノードの TLS 証明書情報（残り日数含む）を返す。"""
+    import time
+    pve = _client()
+    certs = pve.nodes(node).certificates.info.get()
+    now = time.time()
+    result = []
+    for c in certs:
+        notafter = c.get("notafter", 0)
+        days_left = round((notafter - now) / 86400) if notafter else None
+        result.append({
+            "filename": c.get("filename"),
+            "subject": c.get("subject"),
+            "issuer": c.get("issuer"),
+            "notbefore": c.get("notbefore"),
+            "notafter": notafter,
+            "days_left": days_left,
+            "fingerprint": c.get("fingerprint"),
+        })
+    return result
+
+
 def get_storage_content(node: str, storage: str, content_type: str = "") -> list[dict]:
     """ストレージ内のコンテンツ（ISO / テンプレート等）一覧を返す。"""
     pve = _client()

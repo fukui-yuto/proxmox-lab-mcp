@@ -116,6 +116,9 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `proxmox_get_cluster_status` | クラスター全体の健全性ステータス |
 | `proxmox_list_networks` | ノードのネットワーク設定一覧 |
 | `proxmox_get_storage_content` | ストレージ内の ISO / テンプレート一覧 |
+| `proxmox_get_replication_status` | ZFS レプリケーションジョブの状態（node01 ↔ node02 同期確認） |
+| `proxmox_get_backup_jobs` | vzdump バックアップタスク履歴 |
+| `proxmox_get_certificate_info` | TLS 証明書情報と残り有効日数 |
 
 ### Phase 2: Terraform tools ✅
 
@@ -143,9 +146,9 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 
 | ツール名 | 説明 | 破壊的 |
 |---|---|---|
-| `kubectl_get` | kubectl get \<resource\> | ✗ |
+| `kubectl_get` | kubectl get \<resource\>（label_selector / output 引数対応） | ✗ |
 | `kubectl_describe` | kubectl describe \<resource\> \<name\> | ✗ |
-| `kubectl_logs` | Pod ログ取得 | ✗ |
+| `kubectl_logs` | Pod ログ取得（--previous / container / since 引数対応） | ✗ |
 | `kubectl_exec` | Pod 内コマンド実行（シェル調査・疎通確認等） | ✗ |
 | `kubectl_get_events` | Namespace / Pod のイベント一覧（障害原因特定） | ✗ |
 | `kubectl_get_secret` | Secret 内容確認（値はマスク表示） | ✗ |
@@ -169,6 +172,8 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `lab_wakeup` | Wake-on-LAN でホスト起動 |
 | `lab_exec` | SSH 経由で VM / ホスト上のコマンドを直接実行 |
 | `lab_check_port` | ポート開閉・疎通の確認 |
+| `lab_dns_lookup` | DNS 名前解決（Pi-hole 経由確認等） |
+| `lab_cluster_health` | ラボ全体の健全性サマリー（Proxmox + K8s ノード + 異常 Pod 一括確認） |
 
 ## 安全設計
 

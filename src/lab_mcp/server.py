@@ -221,14 +221,16 @@ def ansible_run_playbook(playbook: str, confirm: bool = False) -> str:
 # ── kubectl / Helm ───────────────────────────────────────────────────────────
 
 @mcp.tool()
-def kubectl_get(resource: str, namespace: str = "") -> str:
+def kubectl_get(resource: str, namespace: str = "", label_selector: str = "", output: str = "wide") -> str:
     """kubectl get <resource> を実行する。
 
     Args:
         resource: リソース種別 (例: pods, nodes, deployments)
         namespace: 名前空間。省略時は全 namespace
+        label_selector: ラベルセレクタ (例: app=nginx, env=prod)
+        output: 出力形式 (例: wide, yaml, json。デフォルト: wide)
     """
-    return kubectl.get(resource, namespace or None)
+    return kubectl.get(resource, namespace or None, label_selector, output)
 
 
 @mcp.tool()
@@ -244,15 +246,19 @@ def kubectl_describe(resource: str, name: str, namespace: str = "") -> str:
 
 
 @mcp.tool()
-def kubectl_logs(pod: str, namespace: str = "default", tail: int = 100) -> str:
+def kubectl_logs(pod: str, namespace: str = "default", tail: int = 100,
+                 previous: bool = False, container: str = "", since: str = "") -> str:
     """Pod のログを取得する。
 
     Args:
         pod: Pod 名
         namespace: 名前空間 (デフォルト: default)
         tail: 末尾から取得する行数 (デフォルト: 100)
+        previous: クラッシュ前のコンテナのログを取得 (CrashLoopBackOff 調査に有効)
+        container: コンテナ名（複数コンテナ Pod の場合に指定）
+        since: 指定期間以降のログを取得 (例: 1h, 30m, 2006-01-02T15:04:05Z)
     """
-    return kubectl.logs(pod, namespace, tail)
+    return kubectl.logs(pod, namespace, tail, previous, container, since)
 
 
 @mcp.tool()
@@ -472,6 +478,37 @@ def proxmox_list_networks(node: str) -> str:
 
 
 @mcp.tool()
+def proxmox_get_replication_status(node: str) -> str:
+    """ノードの ZFS レプリケーションジョブの状態を返す（node01 ↔ node02 の同期確認）。
+
+    Args:
+        node: ノード名 (例: pve-node01)
+    """
+    return json.dumps(proxmox.get_replication_status(node), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_get_backup_jobs(node: str, limit: int = 20) -> str:
+    """vzdump バックアップタスクの履歴を返す。
+
+    Args:
+        node: ノード名
+        limit: 取得件数 (デフォルト: 20)
+    """
+    return json.dumps(proxmox.get_backup_jobs(node, limit), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def proxmox_get_certificate_info(node: str) -> str:
+    """ノードの TLS 証明書情報と残り有効日数を返す。
+
+    Args:
+        node: ノード名 (例: pve-node01)
+    """
+    return json.dumps(proxmox.get_certificate_info(node), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 def proxmox_get_storage_content(node: str, storage: str, content_type: str = "") -> str:
     """ストレージ内のコンテンツ（ISO / テンプレート等）一覧を返す。
 
@@ -574,6 +611,58 @@ def lab_check_port(host: str, port: int, timeout: float = 3.0) -> str:
         timeout: タイムアウト秒数 (デフォルト: 3.0)
     """
     return lab.check_port(host, port, timeout)
+
+
+@mcp.tool()
+def lab_dns_lookup(host: str, server: str = "") -> str:
+    """DNS 名前解決を行う（Pi-hole 経由の確認等）。
+
+    Args:
+        host: 解決するホスト名または IP（逆引き）
+        server: 問い合わせ先 DNS サーバー (例: 192.168.210.1)。省略時はシステムデフォルト
+    """
+    return lab.dns_lookup(host, server)
+
+
+@mcp.tool()
+def lab_cluster_health() -> str:
+    """ラボ全体の健全性サマリーを返す。
+
+    Proxmox クラスター・Kubernetes ノード・異常 Pod を一括確認する。
+    """
+    result: dict = {}
+
+    # Proxmox クラスター
+    try:
+        result["proxmox_cluster"] = proxmox.get_cluster_status()
+    except Exception as e:
+        result["proxmox_cluster"] = {"error": str(e)}
+
+    # Proxmox ノードリソース
+    try:
+        result["proxmox_nodes"] = proxmox.list_nodes()
+    except Exception as e:
+        result["proxmox_nodes"] = {"error": str(e)}
+
+    # Kubernetes ノード
+    try:
+        result["k8s_nodes"] = kubectl.get("nodes", output="wide")
+    except Exception as e:
+        result["k8s_nodes"] = {"error": str(e)}
+
+    # 異常 Pod（Running / Completed 以外）
+    try:
+        all_pods = kubectl.get("pods", output="wide")
+        unhealthy = [
+            line for line in all_pods.splitlines()
+            if any(s in line for s in ["CrashLoopBackOff", "Error", "OOMKilled",
+                                        "Pending", "ImagePullBackOff", "Evicted"])
+        ]
+        result["unhealthy_pods"] = unhealthy if unhealthy else "異常な Pod はありません"
+    except Exception as e:
+        result["unhealthy_pods"] = {"error": str(e)}
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
