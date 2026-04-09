@@ -18,10 +18,11 @@ MCP (Model Context Protocol) の学習用に、このリポジトリのコード
    - [tools/ansible.py](#55-toolsansiblepy--ansible-操作)
    - [tools/terraform.py](#56-toolsterraformpy--terraform-操作)
    - [tools/lab.py](#57-toolslabpy--ラボユーティリティ)
-   - [server.py](#58-serverpy--mcp-公開層)
+   - [tools/argocd.py](#58-toolsargocdpy--argocd-rest-api-クライアント)
+   - [server.py](#59-serverpy--mcp-公開層)
 6. [MCP ツール登録の仕組み](#6-mcp-ツール登録の仕組み)
 7. [安全設計：confirm ガード](#7-安全設計confirm-ガード)
-8. [2種類のバックエンド実装パターン](#8-2種類のバックエンド実装パターン)
+8. [3種類のバックエンド実装パターン](#8-3種類のバックエンド実装パターン)
 9. [起動から応答までの完全フロー](#9-起動から応答までの完全フロー)
 10. [ツール一覧と対応関数](#10-ツール一覧と対応関数)
 
@@ -73,7 +74,8 @@ proxmox-lab-mcp/
             ├── kubectl.py      # kubectl / helm コマンドラッパー
             ├── ansible.py      # ansible コマンドラッパー
             ├── terraform.py    # terraform コマンドラッパー
-            └── lab.py          # ping / SSH / WoL / DNS ユーティリティ
+            ├── lab.py          # ping / SSH / WoL / DNS ユーティリティ
+            └── argocd.py       # ArgoCD REST API クライアント
 ```
 
 **設計の大原則：「ツール定義」と「実装」を分離する**
@@ -92,20 +94,20 @@ proxmox-lab-mcp/
                         │                                         │
   Claude ──MCP──►  tool: proxmox_list_vms()  ──────────────────► │
                    tool: kubectl_get()                            │
-                   tool: ansible_ping()       ...etc              │
+                   tool: argocd_list_apps()   ...etc              │
                         └──────┬──────────────────────────────────┘
                                │ 各ツールが対応モジュールを呼び出す
-                    ┌──────────┼───────────────────────────────┐
-                    ▼          ▼          ▼          ▼          ▼
-             proxmox.py  kubectl.py  ansible.py  terraform.py  lab.py
-                    │          │          │          │          │
-                    ▼          ▼          ▼          ▼          ▼
-             proxmoxer   subprocess   subprocess  subprocess  subprocess
-             (REST API)  (kubectl)    (ansible)   (terraform) (ping/ssh)
-                    │
-                    ▼
-             Proxmox API
-             (HTTPS/REST)
+                    ┌──────────┼──────────────────────────────────┐
+                    ▼          ▼          ▼          ▼      ▼     ▼
+             proxmox.py  kubectl.py  ansible.py  terraform  lab  argocd.py
+                    │          │          │          │       │      │
+                    ▼          ▼          ▼          ▼       ▼      ▼
+             proxmoxer   subprocess   subprocess  subprocess ssh  urllib
+             (REST API)  (kubectl)    (ansible)   (terraform)    (REST API)
+                    │                                               │
+                    ▼                                               ▼
+             Proxmox API                                     ArgoCD API
+             (HTTPS/REST)                                    (HTTP/REST)
 ```
 
 ---
@@ -159,6 +161,11 @@ SSH_USER           = os.getenv("SSH_USER", "")
 SSH_KEY            = os.getenv("SSH_KEY", "")
 MCP_HOST           = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT           = int(os.getenv("MCP_PORT", "8000"))
+
+# ArgoCD（任意）
+ARGOCD_SERVER     = os.getenv("ARGOCD_SERVER", "")      # 未設定なら argocd_* ツールはエラーを返す
+ARGOCD_TOKEN      = os.getenv("ARGOCD_TOKEN", "")
+ARGOCD_VERIFY_SSL = os.getenv("ARGOCD_VERIFY_SSL", "false").lower() == "true"
 ```
 
 **ポイント：**
@@ -328,14 +335,23 @@ def wakeup(mac, broadcast):
     sock.sendto(magic, (broadcast, 9))  # UDP ポート 9 に送信
 
 # SSH コマンド実行
-def exec(host, command, user="", ssh_key=""):
+def exec(host, command, user="", ssh_key="", timeout_seconds=30):
     _user = user or config.SSH_USER   # 引数 → 環境変数の優先順位
     _key  = ssh_key or config.SSH_KEY
 
     args = ["ssh",
-            "-o", "StrictHostKeyChecking=no",  # ホスト鍵確認をスキップ（ラボ環境向け）
-            "-o", "BatchMode=yes",              # パスワード入力プロンプトを出さない
+            "-o", "StrictHostKeyChecking=accept-new",  # 初回のみ自動登録、変更時はエラー
+            "-o", "BatchMode=yes",                     # パスワード入力プロンプトを出さない
+            "-o", "ConnectTimeout=10",                 # 接続タイムアウト
             target, command]
+
+    # subprocess.TimeoutExpired を捕捉してフリーズを防止
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout_seconds)
+        # stdout / stderr / exit_code を分けて返す
+        return "[stdout]\n{stdout}\n[stderr]\n{stderr}\n[exit_code] {code}"
+    except subprocess.TimeoutExpired:
+        return f"ERROR: タイムアウト ({timeout_seconds}秒)"
 
 # TCP ポート疎通確認
 def check_port(host, port, timeout=3.0):
@@ -346,7 +362,39 @@ def check_port(host, port, timeout=3.0):
 
 ---
 
-### 5.8 `server.py` — MCP 公開層
+### 5.8 `tools/argocd.py` — ArgoCD REST API クライアント
+
+**proxmox.py と同じパターン：subprocess でなく HTTP REST API を直接叩く**
+
+```python
+def _request(method: str, path: str, body: dict | None = None) -> dict:
+    url = f"{config.ARGOCD_SERVER.rstrip('/')}{path}"
+    headers = {"Authorization": f"Bearer {config.ARGOCD_TOKEN}"}
+    req = urllib.request.Request(url, data=..., headers=headers, method=method)
+
+    ctx = ssl.create_default_context()
+    if not config.ARGOCD_VERIFY_SSL:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE   # 自己署名証明書を許可
+
+    with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+```
+
+`urllib` を使う理由：`requests` を追加依存させずに HTTP 通信を実現するため。標準ライブラリのみで完結させています。
+
+**主な関数：**
+
+| 関数 | HTTP | エンドポイント | 説明 |
+|------|------|--------------|------|
+| `list_apps(project)` | GET | `/api/v1/applications` | 全アプリの sync/health 状態 |
+| `get_app(name)` | GET | `/api/v1/applications/{name}` | アプリ詳細・リソース一覧 |
+| `sync_app(name, ...)` | POST | `/api/v1/applications/{name}/sync` | sync 実行（revision/prune/dry_run 対応） |
+| `refresh_app(name, hard)` | GET | `/api/v1/applications/{name}?refresh=hard` | Git から再取得して状態を更新 |
+
+---
+
+### 5.9 `server.py` — MCP 公開層
 
 このファイルが MCP サーバーの心臓部です。
 
@@ -461,11 +509,11 @@ def proxmox_stop_vm(node: str, vmid: int, vm_type: str = "qemu", confirm: bool =
 
 ---
 
-## 8. 2種類のバックエンド実装パターン
+## 8. 3種類のバックエンド実装パターン
 
-このプロジェクトでは、バックエンドへのアクセス方法が2パターンあります。
+このプロジェクトでは、バックエンドへのアクセス方法が3パターンあります。
 
-### パターン A：REST API（proxmox.py）
+### パターン A：REST API ライブラリ（proxmox.py）
 
 ```python
 # proxmoxer ライブラリ経由で HTTP REST API を直接叩く
@@ -486,6 +534,18 @@ return result.stdout + result.stderr
 
 - **メリット**：CLIと全く同じ動作、ツールのバージョンに左右されにくい
 - **デメリット**：テキスト解析が必要、CLIが PATH にある必要がある
+
+### パターン C：標準ライブラリ HTTP（argocd.py）
+
+```python
+# urllib で直接 REST API を叩く（外部ライブラリ不要）
+req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
+    return json.loads(resp.read())
+```
+
+- **メリット**：外部ライブラリ不要、SSL 検証の柔軟な制御が可能
+- **デメリット**：requests に比べて冗長、リトライ・セッション管理を自前で書く必要がある
 
 ---
 
@@ -574,7 +634,7 @@ return result.stdout + result.stderr
 
 | MCPツール名 | tools/kubectl.py の関数 | 説明 |
 |------------|------------------------|------|
-| `kubectl_get` | `get()` | リソース一覧 |
+| `kubectl_get` | `get()` | リソース一覧（jq_filter 対応） |
 | `kubectl_describe` | `describe()` | リソース詳細 |
 | `kubectl_logs` | `logs()` | Podのログ |
 | `kubectl_exec` | `exec()` | Pod内コマンド実行 |
@@ -582,15 +642,29 @@ return result.stdout + result.stderr
 | `kubectl_get_secret` | `get_secret()` | Secret（値マスク済み）|
 | `kubectl_get_configmap` | `get_configmap()` | ConfigMap |
 | `kubectl_top` | `top()` | リソース使用量 |
-| `kubectl_rollout_status` | `rollout_status()` | ロールアウト状態 |
+| `kubectl_rollout_status` | `rollout_status()` | ロールアウト状態確認 |
+| `kubectl_rollout_restart` | `rollout_restart()` | ローリングリスタート |
+| `kubectl_patch` | `patch()` | リソース部分更新 |
+| `kubectl_annotate` | `annotate()` | アノテーション追加・更新 |
+| `kubectl_wait` | `wait()` | 条件達成まで待機 |
 | `kubectl_run` | `run_pod()` | 一時Pod実行（自動削除）|
 | `kubectl_port_forward` | `port_forward()` | ポートフォワード |
 | `helm_list` | `helm_list()` | Helmリリース一覧 |
-| `helm_get_values` | `helm_get_values()` | Helm values |
-| `kubectl_apply` | `apply()` | マニフェスト適用 ⚠ |
+| `helm_get_values` | `helm_get_values()` | リリースの values 確認 |
+| `helm_show_values` | `helm_show_values()` | チャートのデフォルト values |
+| `kubectl_apply` | `apply()` | マニフェスト適用（インライン YAML 対応） ⚠ |
 | `kubectl_delete` | `delete()` | リソース削除 ⚠ |
 | `helm_upgrade` | `helm_upgrade()` | Helmアップグレード ⚠ |
 | `helm_uninstall` | `helm_uninstall()` | Helmアンインストール ⚠ |
+
+### ArgoCD
+
+| MCPツール名 | tools/argocd.py の関数 | 説明 |
+|------------|----------------------|------|
+| `argocd_list_apps` | `list_apps()` | 全アプリの sync/health 状態一覧 |
+| `argocd_get_app` | `get_app()` | アプリ詳細・リソース一覧 |
+| `argocd_sync` | `sync_app()` | sync 実行（revision/prune/dry_run 対応）|
+| `argocd_refresh` | `refresh_app()` | hard refresh（Git から再取得）|
 
 ### Ansible
 
@@ -620,7 +694,7 @@ return result.stdout + result.stderr
 |------------|---------------------|------|
 | `lab_ping` | `ping()` | ICMPで疎通確認 |
 | `lab_wakeup` | `wakeup()` | Wake-on-LAN |
-| `lab_exec` | `exec()` | SSH経由コマンド実行 |
+| `lab_exec` | `exec()` | SSH経由コマンド実行（timeout_seconds 対応、stdout/stderr 分離）|
 | `lab_check_port` | `check_port()` | TCPポート開閉確認 |
 | `lab_dns_lookup` | `dns_lookup()` | DNS名前解決 |
 | `lab_cluster_health` | (server.py内で実装) | ラボ全体の健全性サマリー |

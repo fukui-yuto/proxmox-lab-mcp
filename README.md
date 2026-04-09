@@ -12,7 +12,8 @@ Raspberry Pi 5 (Ubuntu 24) ← MCP Server
     ├── proxmoxer  → Proxmox API (LAN)
     ├── terraform CLI (ネイティブ実行)
     ├── ansible CLI (ネイティブ実行)
-    └── kubectl (kubeconfig)
+    ├── kubectl (kubeconfig)
+    └── ArgoCD REST API (http://argocd.homelab.local)
 ```
 
 ## セットアップ（Raspberry Pi 上）
@@ -35,7 +36,51 @@ cd ~/proxmox-lab-mcp
 
 ```bash
 cp .env.example .env
-vi .env  # Proxmox の接続情報を記入
+vi .env  # 各サービスの接続情報を記入
+```
+
+必須の環境変数:
+
+| 変数名 | 説明 |
+|---|---|
+| `PROXMOX_HOST` | Proxmox ホスト IP |
+| `PROXMOX_USER` | Proxmox ユーザー (例: `root@pam`) |
+| `PROXMOX_TOKEN_NAME` | API トークン名 |
+| `PROXMOX_TOKEN_VALUE` | API トークン値 |
+| `TERRAFORM_DIR` | terraform ディレクトリのパス |
+| `ANSIBLE_DIR` | ansible ディレクトリのパス |
+| `KUBECONFIG` | kubeconfig ファイルのパス |
+
+ArgoCD ツールを使用する場合（任意）:
+
+| 変数名 | 説明 |
+|---|---|
+| `ARGOCD_SERVER` | ArgoCD サーバー URL (例: `http://argocd.homelab.local`) |
+| `ARGOCD_TOKEN` | ArgoCD API トークン（期限なし）|
+| `ARGOCD_VERIFY_SSL` | SSL 検証 (`true`/`false`、デフォルト: `false`) |
+
+**ArgoCD API トークンの取得方法:**
+
+```bash
+# admin アカウントに apiKey 権限を付与（初回のみ）
+kubectl -n argocd patch configmap argocd-cm \
+  -p '{"data": {"accounts.admin": "apiKey,login"}}'
+
+# セッショントークンを取得してからAPIトークンを生成
+SESSION=$(curl -sk -X POST https://<argocd-url>/api/v1/session \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<password>"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+curl -sk -X POST https://<argocd-url>/api/v1/account/admin/token \
+  -H "Authorization: Bearer $SESSION" \
+  -H 'Content-Type: application/json' \
+  -d '{"expiresIn": 0, "id": "mcp-token"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])"
+```
+
+また、Pi の `/etc/hosts` に ArgoCD のホスト名を追加しておく必要があります:
+
+```bash
+echo "192.168.210.21 argocd.homelab.local" >> /etc/hosts
 ```
 
 ### 4. 起動確認
@@ -146,7 +191,7 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 
 | ツール名 | 説明 | 破壊的 |
 |---|---|---|
-| `kubectl_get` | kubectl get \<resource\>（label_selector / output 引数対応） | ✗ |
+| `kubectl_get` | kubectl get \<resource\>（label_selector / output / **jq_filter** 引数対応） | ✗ |
 | `kubectl_describe` | kubectl describe \<resource\> \<name\> | ✗ |
 | `kubectl_logs` | Pod ログ取得（--previous / container / since 引数対応） | ✗ |
 | `kubectl_exec` | Pod 内コマンド実行（シェル調査・疎通確認等） | ✗ |
@@ -155,14 +200,30 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `kubectl_get_configmap` | ConfigMap 内容確認 | ✗ |
 | `kubectl_run` | 一時 Pod でコマンド実行（Pod は自動削除） | ✗ |
 | `kubectl_port_forward` | ローカルへのポートフォワード（バックグラウンド実行） | ✗ |
-| `kubectl_apply` | マニフェスト apply | ✓ confirm 必須 |
+| `kubectl_apply` | マニフェスト apply（ファイルパス or **インライン YAML** 対応） | ✓ confirm 必須 |
 | `kubectl_delete` | リソース削除 | ✓ confirm 必須 |
-| `kubectl_rollout_status` | Deployment ロールアウト状態 | ✗ |
+| `kubectl_patch` | リソース部分更新（merge / strategic / json パッチ対応） | ✗ |
+| `kubectl_annotate` | アノテーション追加・更新 | ✗ |
+| `kubectl_rollout_status` | Deployment ロールアウト状態確認 | ✗ |
+| `kubectl_rollout_restart` | Deployment / StatefulSet / DaemonSet のローリングリスタート | ✗ |
+| `kubectl_wait` | リソースが指定条件になるまで待機（condition / timeout 指定可） | ✗ |
 | `kubectl_top` | Node / Pod リソース使用量 | ✗ |
 | `helm_list` | Helm リリース一覧 | ✗ |
 | `helm_get_values` | リリースの values 確認 | ✗ |
+| `helm_show_values` | チャートのデフォルト values 確認（インストール前の設定確認に有用） | ✗ |
 | `helm_upgrade` | リリースのアップグレード／インストール | ✓ confirm 必須 |
 | `helm_uninstall` | リリースの削除 | ✓ confirm 必須 |
+
+### Phase 5: ArgoCD tools ✅
+
+環境変数 `ARGOCD_SERVER` / `ARGOCD_TOKEN` が必要。
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `argocd_list_apps` | 全アプリの一覧と sync/health 状態 | ✗ |
+| `argocd_get_app` | アプリ詳細（リソース一覧・条件付き状態） | ✗ |
+| `argocd_sync` | アプリの sync 実行（revision / prune / dry_run 対応） | ✓ |
+| `argocd_refresh` | hard refresh トリガー（Git から再取得） | ✗ |
 
 ### Lab ユーティリティ ✅
 
@@ -170,7 +231,7 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 |---|---|
 | `lab_ping` | Raspberry Pi から疎通確認 |
 | `lab_wakeup` | Wake-on-LAN でホスト起動 |
-| `lab_exec` | SSH 経由で VM / ホスト上のコマンドを直接実行 |
+| `lab_exec` | SSH 経由で VM / ホスト上のコマンドを直接実行（**timeout_seconds** 対応、stdout/stderr 分離出力） |
 | `lab_check_port` | ポート開閉・疎通の確認 |
 | `lab_dns_lookup` | DNS 名前解決（Pi-hole 経由確認等） |
 | `lab_cluster_health` | ラボ全体の健全性サマリー（Proxmox + K8s ノード + 異常 Pod 一括確認） |
