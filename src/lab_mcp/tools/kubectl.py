@@ -13,16 +13,31 @@ def _run(args: list[str]) -> str:
     return (result.stdout + result.stderr).strip()
 
 
-def get(resource: str, namespace: str | None = None, label_selector: str = "", output: str = "wide") -> str:
+def get(resource: str, namespace: str | None = None, label_selector: str = "",
+        output: str = "wide", jq_filter: str = "") -> str:
     """kubectl get <resource> を実行する。"""
-    args = ["kubectl", "get", resource, "-o", output]
+    _output = output
+    if jq_filter and output not in ("json", "yaml"):
+        _output = "json"
+    args = ["kubectl", "get", resource, "-o", _output]
     if namespace:
         args += ["-n", namespace]
     else:
         args += ["--all-namespaces"]
     if label_selector:
         args += ["-l", label_selector]
-    return _run(args)
+    result = _run(args)
+    if jq_filter:
+        import subprocess as _sp, json as _json
+        try:
+            jq_proc = _sp.run(
+                ["jq", jq_filter],
+                input=result, capture_output=True, text=True, timeout=10
+            )
+            return (jq_proc.stdout + jq_proc.stderr).strip()
+        except Exception as e:
+            return f"jq フィルタ適用エラー: {e}\n\n{result}"
+    return result
 
 
 def describe(resource: str, name: str, namespace: str | None = None) -> str:
@@ -61,9 +76,78 @@ def helm_get_values(release: str, namespace: str = "default") -> str:
     return _run(["helm", "get", "values", release, "-n", namespace])
 
 
-def apply(manifest: str) -> str:
-    """kubectl apply -f <manifest> を実行する。"""
+def helm_show_values(chart: str, version: str = "") -> str:
+    """helm show values でチャートのデフォルト values を返す。"""
+    args = ["helm", "show", "values", chart]
+    if version:
+        args += ["--version", version]
+    return _run(args)
+
+
+def apply(manifest: str = "", manifest_content: str = "") -> str:
+    """kubectl apply を実行する。ファイルパスまたはインライン YAML を受け付ける。"""
+    if manifest_content:
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(manifest_content)
+            tmp_path = f.name
+        try:
+            return _run(["kubectl", "apply", "-f", tmp_path])
+        finally:
+            os.unlink(tmp_path)
+    if not manifest:
+        return "ERROR: manifest または manifest_content のどちらかを指定してください。"
     return _run(["kubectl", "apply", "-f", manifest])
+
+
+def patch(resource: str, name: str, patch_json: str,
+          namespace: str | None = None, patch_type: str = "merge") -> str:
+    """kubectl patch でリソースを部分更新する。"""
+    args = ["kubectl", "patch", resource, name, f"--type={patch_type}", f"--patch={patch_json}"]
+    if namespace:
+        args += ["-n", namespace]
+    return _run(args)
+
+
+def annotate(resource: str, name: str, annotations: str,
+             namespace: str | None = None, overwrite: bool = True) -> str:
+    """kubectl annotate でアノテーションを追加・更新する。
+
+    Args:
+        annotations: スペース区切りの key=value (例: "argocd.argoproj.io/refresh=hard")
+    """
+    args = ["kubectl", "annotate", resource, name] + annotations.split()
+    if overwrite:
+        args += ["--overwrite"]
+    if namespace:
+        args += ["-n", namespace]
+    return _run(args)
+
+
+def wait(resource: str, condition: str, namespace: str | None = None,
+         timeout_seconds: int = 60) -> str:
+    """kubectl wait でリソースが指定条件になるまで待機する。
+
+    Args:
+        resource: リソース指定 (例: pod/my-pod, deployment/nginx, pods --all)
+        condition: 待機条件 (例: condition=Ready, condition=Available, delete)
+        timeout_seconds: 最大待機秒数 (デフォルト: 60)
+    """
+    args = ["kubectl", "wait", resource, f"--for={condition}", f"--timeout={timeout_seconds}s"]
+    if namespace:
+        args += ["-n", namespace]
+    else:
+        args += ["--all-namespaces"]
+    return _run(args)
+
+
+def rollout_restart(resource: str, namespace: str = "default") -> str:
+    """Deployment / StatefulSet / DaemonSet をローリングリスタートする。
+
+    Args:
+        resource: リソース指定 (例: deployment/nginx, statefulset/postgres)
+    """
+    return _run(["kubectl", "rollout", "restart", resource, "-n", namespace])
 
 
 def rollout_status(deployment: str, namespace: str = "default") -> str:

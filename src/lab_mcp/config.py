@@ -24,5 +24,9 @@ KUBECONFIG = os.getenv("KUBECONFIG", os.path.expanduser("~/.kube/config"))
 SSH_USER = os.getenv("SSH_USER", "")
 SSH_KEY = os.getenv("SSH_KEY", "")
 
+ARGOCD_SERVER = os.getenv("ARGOCD_SERVER", "")
+ARGOCD_TOKEN = os.getenv("ARGOCD_TOKEN", "")
+ARGOCD_VERIFY_SSL = os.getenv("ARGOCD_VERIFY_SSL", "false").lower() == "true"
+
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8000"))

@@ -1,7 +1,7 @@
 import json
 from mcp.server.fastmcp import FastMCP
 from lab_mcp import config
-from lab_mcp.tools import proxmox, terraform, ansible, kubectl, lab
+from lab_mcp.tools import proxmox, terraform, ansible, kubectl, lab, argocd
 
 mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 
@@ -221,7 +221,8 @@ def ansible_run_playbook(playbook: str, confirm: bool = False) -> str:
 # ── kubectl / Helm ───────────────────────────────────────────────────────────
 
 @mcp.tool()
-def kubectl_get(resource: str, namespace: str = "", label_selector: str = "", output: str = "wide") -> str:
+def kubectl_get(resource: str, namespace: str = "", label_selector: str = "",
+                output: str = "wide", jq_filter: str = "") -> str:
     """kubectl get <resource> を実行する。
 
     Args:
@@ -229,8 +230,9 @@ def kubectl_get(resource: str, namespace: str = "", label_selector: str = "", ou
         namespace: 名前空間。省略時は全 namespace
         label_selector: ラベルセレクタ (例: app=nginx, env=prod)
         output: 出力形式 (例: wide, yaml, json。デフォルト: wide)
+        jq_filter: jq フィルタ式 (例: '.items[].metadata.name')。指定すると json 出力に適用
     """
-    return kubectl.get(resource, namespace or None, label_selector, output)
+    return kubectl.get(resource, namespace or None, label_selector, output, jq_filter)
 
 
 @mcp.tool()
@@ -282,19 +284,31 @@ def helm_get_values(release: str, namespace: str = "default") -> str:
     return kubectl.helm_get_values(release, namespace)
 
 
+@mcp.tool()
+def helm_show_values(chart: str, version: str = "") -> str:
+    """Helm チャートのデフォルト values を表示する（インストール前の設定確認に有用）。
+
+    Args:
+        chart: チャート名 (例: bitnami/nginx, stable/grafana)
+        version: チャートバージョン (省略時は最新)
+    """
+    return kubectl.helm_show_values(chart, version)
+
+
 # ── kubectl 操作系 ───────────────────────────────────────────────────────────
 
 @mcp.tool()
-def kubectl_apply(manifest: str, confirm: bool = False) -> str:
-    """kubectl apply -f <manifest> を実行する。破壊的操作のため confirm=true が必須。
+def kubectl_apply(manifest: str = "", manifest_content: str = "", confirm: bool = False) -> str:
+    """kubectl apply を実行する。ファイルパスまたはインライン YAML を受け付ける。破壊的操作のため confirm=true が必須。
 
     Args:
-        manifest: マニフェストファイルパス または URL
+        manifest: マニフェストファイルパス または URL（ファイルが存在する場合）
+        manifest_content: インライン YAML 文字列（ファイルなしで直接 apply したい場合）
         confirm: true を明示しないと実行されない
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return kubectl.apply(manifest)
+    return kubectl.apply(manifest, manifest_content)
 
 
 @mcp.tool()
@@ -306,6 +320,61 @@ def kubectl_rollout_status(deployment: str, namespace: str = "default") -> str:
         namespace: 名前空間 (デフォルト: default)
     """
     return kubectl.rollout_status(deployment, namespace)
+
+
+@mcp.tool()
+def kubectl_rollout_restart(resource: str, namespace: str = "default") -> str:
+    """Deployment / StatefulSet / DaemonSet をローリングリスタートする。
+
+    Args:
+        resource: リソース指定 (例: deployment/nginx, statefulset/postgres, daemonset/fluentd)
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.rollout_restart(resource, namespace)
+
+
+@mcp.tool()
+def kubectl_patch(resource: str, name: str, patch_json: str,
+                  namespace: str = "", patch_type: str = "merge") -> str:
+    """kubectl patch でリソースを部分更新する。
+
+    Args:
+        resource: リソース種別 (例: deployment, service, configmap)
+        name: リソース名
+        patch_json: パッチ内容（JSON 文字列）(例: '{"spec":{"replicas":3}}')
+        namespace: 名前空間。省略時はデフォルト
+        patch_type: パッチ種別 ("merge", "strategic", "json")。デフォルト: merge
+    """
+    return kubectl.patch(resource, name, patch_json, namespace or None, patch_type)
+
+
+@mcp.tool()
+def kubectl_annotate(resource: str, name: str, annotations: str,
+                     namespace: str = "", overwrite: bool = True) -> str:
+    """kubectl annotate でアノテーションを追加・更新する。
+
+    Args:
+        resource: リソース種別 (例: pod, deployment, application)
+        name: リソース名
+        annotations: スペース区切りの key=value (例: "argocd.argoproj.io/refresh=hard")
+        namespace: 名前空間。省略時はデフォルト
+        overwrite: 既存アノテーションを上書きする (デフォルト: true)
+    """
+    return kubectl.annotate(resource, name, annotations, namespace or None, overwrite)
+
+
+@mcp.tool()
+def kubectl_wait(resource: str, condition: str, namespace: str = "",
+                 timeout_seconds: int = 60) -> str:
+    """kubectl wait でリソースが指定条件になるまで待機する。
+
+    Args:
+        resource: リソース指定 (例: pod/my-pod, deployment/nginx, pods --all)
+        condition: 待機条件 (例: condition=Ready, condition=Available, delete)
+        namespace: 名前空間。省略時は全 namespace
+        timeout_seconds: 最大待機秒数 (デフォルト: 60)
+    """
+    return kubectl.wait(resource, condition, namespace or None, timeout_seconds)
 
 
 @mcp.tool()
@@ -589,7 +658,8 @@ def lab_wakeup(mac: str, broadcast: str = "192.168.210.255") -> str:
 
 
 @mcp.tool()
-def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "") -> str:
+def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "",
+             timeout_seconds: int = 30) -> str:
     """SSH 経由で VM / ホスト上のコマンドを直接実行する。
 
     Args:
@@ -597,8 +667,9 @@ def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "") -> str:
         command: 実行するコマンド (例: "df -h", "systemctl status nginx")
         user: SSH ユーザー名（省略時は SSH_USER 環境変数）
         ssh_key: SSH 秘密鍵パス（省略時は SSH_KEY 環境変数）
+        timeout_seconds: タイムアウト秒数（デフォルト: 30、最大推奨: 300）
     """
-    return lab.exec(host, command, user, ssh_key)
+    return lab.exec(host, command, user, ssh_key, timeout_seconds)
 
 
 @mcp.tool()
@@ -663,6 +734,85 @@ def lab_cluster_health() -> str:
         result["unhealthy_pods"] = {"error": str(e)}
 
     return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+# ── ArgoCD ───────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def argocd_list_apps(project: str = "") -> str:
+    """ArgoCD の全アプリケーション一覧と sync/health 状態を返す。
+
+    環境変数 ARGOCD_SERVER・ARGOCD_TOKEN が必要。
+
+    Args:
+        project: プロジェクト名でフィルタ（省略時は全プロジェクト）
+    """
+    try:
+        return json.dumps(argocd.list_apps(project), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_get_app(name: str) -> str:
+    """指定 ArgoCD アプリケーションの詳細（sync/health/リソース一覧）を返す。
+
+    Args:
+        name: アプリケーション名
+    """
+    try:
+        return json.dumps(argocd.get_app(name), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_sync(name: str, revision: str = "", prune: bool = False,
+                dry_run: bool = False) -> str:
+    """ArgoCD アプリケーションの sync を実行する。
+
+    Args:
+        name: アプリケーション名
+        revision: 同期するリビジョン（省略時は HEAD）
+        prune: Kubernetes に存在するが Git にないリソースを削除する
+        dry_run: 実際には変更せずに計画だけ表示する
+    """
+    try:
+        result = argocd.sync_app(name, revision, prune, dry_run)
+        return json.dumps(
+            {
+                "name": result.get("metadata", {}).get("name"),
+                "sync_status": result.get("status", {}).get("sync", {}).get("status"),
+                "health_status": result.get("status", {}).get("health", {}).get("status"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_refresh(name: str, hard: bool = True) -> str:
+    """ArgoCD アプリケーションのキャッシュを更新する（hard refresh）。
+
+    Args:
+        name: アプリケーション名
+        hard: True でハードリフレッシュ（Git から再取得）、False でソフトリフレッシュ
+    """
+    try:
+        result = argocd.refresh_app(name, hard)
+        return json.dumps(
+            {
+                "name": result.get("metadata", {}).get("name"),
+                "sync_status": result.get("status", {}).get("sync", {}).get("status"),
+                "health_status": result.get("status", {}).get("health", {}).get("status"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
