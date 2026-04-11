@@ -34,7 +34,7 @@ def wakeup(mac: str, broadcast: str = "192.168.210.255") -> str:
 
 
 def exec(host: str, command: str, user: str = "", ssh_key: str = "",
-         timeout_seconds: int = 30) -> str:
+         timeout_seconds: int = 120) -> str:
     """SSH 経由でホスト上のコマンドを実行する。
 
     Args:
@@ -42,7 +42,7 @@ def exec(host: str, command: str, user: str = "", ssh_key: str = "",
         command: 実行するコマンド
         user: SSH ユーザー名（省略時は SSH_USER 環境変数またはシステムデフォルト）
         ssh_key: SSH 秘密鍵パス（省略時は SSH_KEY 環境変数またはシステムデフォルト）
-        timeout_seconds: タイムアウト秒数（デフォルト: 30）
+        timeout_seconds: タイムアウト秒数（デフォルト: 120）
     """
     _user = user or config.SSH_USER
     _key = ssh_key or config.SSH_KEY
@@ -50,7 +50,8 @@ def exec(host: str, command: str, user: str = "", ssh_key: str = "",
     target = f"{_user}@{host}" if _user else host
     args = [
         "ssh",
-        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=10",
     ]

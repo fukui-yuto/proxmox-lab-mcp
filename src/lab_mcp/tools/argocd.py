@@ -11,29 +11,60 @@ import ssl
 from lab_mcp import config
 
 
-def _request(method: str, path: str, body: dict | None = None) -> dict:
-    """ArgoCD API へリクエストを送る。"""
-    if not config.ARGOCD_SERVER:
-        raise RuntimeError("環境変数 ARGOCD_SERVER が未設定です")
-    if not config.ARGOCD_TOKEN:
-        raise RuntimeError("環境変数 ARGOCD_TOKEN が未設定です")
+_token_cache: str = ""
 
-    url = f"{config.ARGOCD_SERVER.rstrip('/')}{path}"
-    data = json.dumps(body).encode() if body else None
-    headers = {
-        "Authorization": f"Bearer {config.ARGOCD_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+
+def _get_ctx() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
     if not config.ARGOCD_VERIFY_SSL:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-    try:
-        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+    return ctx
+
+
+def _login() -> str:
+    """ユーザー名/パスワードで再認証し、新しいトークンを返す。"""
+    global _token_cache
+    if not config.ARGOCD_USERNAME or not config.ARGOCD_PASSWORD:
+        raise RuntimeError("再認証に失敗しました。ARGOCD_USERNAME / ARGOCD_PASSWORD が未設定です")
+    url = f"{config.ARGOCD_SERVER.rstrip('/')}/api/v1/session"
+    body = json.dumps({"username": config.ARGOCD_USERNAME, "password": config.ARGOCD_PASSWORD}).encode()
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, context=_get_ctx(), timeout=30) as resp:
+        data = json.loads(resp.read().decode())
+    _token_cache = data["token"]
+    return _token_cache
+
+
+def _request(method: str, path: str, body: dict | None = None) -> dict:
+    """ArgoCD API へリクエストを送る。401 時はトークンを再取得してリトライする。"""
+    global _token_cache
+    if not config.ARGOCD_SERVER:
+        raise RuntimeError("環境変数 ARGOCD_SERVER が未設定です")
+
+    token = _token_cache or config.ARGOCD_TOKEN
+    if not token:
+        raise RuntimeError("環境変数 ARGOCD_TOKEN が未設定です")
+
+    def _do_request(tok: str) -> dict:
+        url = f"{config.ARGOCD_SERVER.rstrip('/')}{path}"
+        data = json.dumps(body).encode() if body else None
+        headers = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        with urllib.request.urlopen(req, context=_get_ctx(), timeout=30) as resp:
             return json.loads(resp.read().decode())
+
+    try:
+        return _do_request(token)
     except urllib.error.HTTPError as e:
         body_text = e.read().decode(errors="replace")
+        if e.code == 401 and (config.ARGOCD_USERNAME and config.ARGOCD_PASSWORD):
+            new_token = _login()
+            try:
+                return _do_request(new_token)
+            except urllib.error.HTTPError as e2:
+                body2 = e2.read().decode(errors="replace")
+                raise RuntimeError(f"ArgoCD API エラー {e2.code}: {body2}") from e2
         raise RuntimeError(f"ArgoCD API エラー {e.code}: {body_text}") from e
 
 
@@ -59,9 +90,9 @@ def list_apps(project: str = "") -> list:
     ]
 
 
-def get_app(name: str) -> dict:
+def get_app(app_name: str) -> dict:
     """指定アプリケーションの詳細（sync/health/resource 一覧）を返す。"""
-    data = _request("GET", f"/api/v1/applications/{name}")
+    data = _request("GET", f"/api/v1/applications/{app_name}")
     status = data.get("status", {})
     return {
         "name": data.get("metadata", {}).get("name"),

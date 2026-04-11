@@ -31,7 +31,7 @@ def get(resource: str, namespace: str | None = None, label_selector: str = "",
         import subprocess as _sp, json as _json
         try:
             jq_proc = _sp.run(
-                ["jq", jq_filter],
+                ["jq", "-r", jq_filter],
                 input=result, capture_output=True, text=True, timeout=10
             )
             return (jq_proc.stdout + jq_proc.stderr).strip()
@@ -48,10 +48,10 @@ def describe(resource: str, name: str, namespace: str | None = None) -> str:
     return _run(args)
 
 
-def logs(pod: str, namespace: str = "default", tail: int = 100,
+def logs(pod_name: str, namespace: str = "default", tail: int = 100,
          previous: bool = False, container: str = "", since: str = "") -> str:
     """kubectl logs で Pod のログを取得する。"""
-    args = ["kubectl", "logs", pod, "-n", namespace, f"--tail={tail}"]
+    args = ["kubectl", "logs", pod_name, "-n", namespace, f"--tail={tail}"]
     if previous:
         args += ["--previous"]
     if container:
@@ -150,16 +150,30 @@ def rollout_restart(resource: str, namespace: str = "default") -> str:
     return _run(["kubectl", "rollout", "restart", resource, "-n", namespace])
 
 
-def rollout_status(deployment: str, namespace: str = "default") -> str:
-    """Deployment のロールアウト状態を返す。"""
-    return _run(["kubectl", "rollout", "status", f"deployment/{deployment}", "-n", namespace])
+def rollout_status(resource: str, namespace: str = "default") -> str:
+    """Deployment / StatefulSet / DaemonSet のロールアウト状態を返す。
+
+    Args:
+        resource: リソース指定 (例: deployment/nginx, statefulset/postgres, daemonset/fluentd)
+    """
+    return _run(["kubectl", "rollout", "status", resource, "-n", namespace])
 
 
-def delete(resource: str, name: str, namespace: str | None = None) -> str:
-    """kubectl delete <resource> <name> を実行する。"""
+def delete(resource: str, name: str, namespace: str | None = None,
+           force: bool = False, grace_period: int = -1) -> str:
+    """kubectl delete <resource> <name> を実行する。
+
+    Args:
+        force: 強制削除 (詰まった Pod の解放に有効)
+        grace_period: グレースピリオド秒数 (0 で即時削除。-1 はデフォルト動作)
+    """
     args = ["kubectl", "delete", resource, name]
     if namespace:
         args += ["-n", namespace]
+    if force:
+        args += ["--force"]
+    if grace_period >= 0:
+        args += [f"--grace-period={grace_period}"]
     return _run(args)
 
 
@@ -196,15 +210,29 @@ def exec(pod: str, command: str, namespace: str = "default", container: str = ""
     return _run(args)
 
 
-def get_events(namespace: str | None = None, field_selector: str = "") -> str:
-    """Namespace / Pod のイベント一覧を返す。"""
+def get_events(namespace: str | None = None, resource_name: str = "",
+               resource_kind: str = "", field_selector: str = "") -> str:
+    """Namespace / Pod のイベント一覧を返す。
+
+    Args:
+        resource_name: 特定リソース名でフィルタ (例: my-pod)
+        resource_kind: リソース種別でフィルタ (例: Pod, Deployment)
+        field_selector: 追加フィールドセレクタ
+    """
     args = ["kubectl", "get", "events", "--sort-by=.lastTimestamp"]
     if namespace:
         args += ["-n", namespace]
     else:
         args += ["--all-namespaces"]
+    selectors = []
+    if resource_name:
+        selectors.append(f"involvedObject.name={resource_name}")
+    if resource_kind:
+        selectors.append(f"involvedObject.kind={resource_kind}")
     if field_selector:
-        args += [f"--field-selector={field_selector}"]
+        selectors.append(field_selector)
+    if selectors:
+        args += ["--field-selector", ",".join(selectors)]
     return _run(args)
 
 

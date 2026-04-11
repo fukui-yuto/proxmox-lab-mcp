@@ -248,19 +248,19 @@ def kubectl_describe(resource: str, name: str, namespace: str = "") -> str:
 
 
 @mcp.tool()
-def kubectl_logs(pod: str, namespace: str = "default", tail: int = 100,
+def kubectl_logs(pod_name: str, namespace: str = "default", tail: int = 100,
                  previous: bool = False, container: str = "", since: str = "") -> str:
     """Pod のログを取得する。
 
     Args:
-        pod: Pod 名
+        pod_name: Pod 名
         namespace: 名前空間 (デフォルト: default)
         tail: 末尾から取得する行数 (デフォルト: 100)
         previous: クラッシュ前のコンテナのログを取得 (CrashLoopBackOff 調査に有効)
         container: コンテナ名（複数コンテナ Pod の場合に指定）
         since: 指定期間以降のログを取得 (例: 1h, 30m, 2006-01-02T15:04:05Z)
     """
-    return kubectl.logs(pod, namespace, tail, previous, container, since)
+    return kubectl.logs(pod_name, namespace, tail, previous, container, since)
 
 
 @mcp.tool()
@@ -312,14 +312,14 @@ def kubectl_apply(manifest: str = "", manifest_content: str = "", confirm: bool 
 
 
 @mcp.tool()
-def kubectl_rollout_status(deployment: str, namespace: str = "default") -> str:
-    """Deployment のロールアウト状態を返す。
+def kubectl_rollout_status(resource: str, namespace: str = "default") -> str:
+    """Deployment / StatefulSet / DaemonSet のロールアウト状態を返す。
 
     Args:
-        deployment: Deployment 名
+        resource: リソース指定 (例: deployment/nginx, statefulset/postgres, daemonset/fluentd)
         namespace: 名前空間 (デフォルト: default)
     """
-    return kubectl.rollout_status(deployment, namespace)
+    return kubectl.rollout_status(resource, namespace)
 
 
 @mcp.tool()
@@ -389,18 +389,18 @@ def kubectl_top(resource: str = "nodes", namespace: str = "") -> str:
 
 
 @mcp.tool()
-def kubectl_delete(resource: str, name: str, namespace: str = "", confirm: bool = False) -> str:
-    """kubectl delete <resource> <name> を実行する。破壊的操作のため confirm=true が必須。
+def kubectl_delete(resource: str, name: str, namespace: str = "",
+                   force: bool = False, grace_period: int = -1) -> str:
+    """kubectl delete <resource> <name> を実行する。
 
     Args:
         resource: リソース種別 (例: pod, deployment, pvc)
         name: リソース名
         namespace: 名前空間。省略時はデフォルト
-        confirm: true を明示しないと実行されない
+        force: 強制削除 (詰まった Pod の解放に有効)
+        grace_period: グレースピリオド秒数 (0 で即時削除。省略時はデフォルト動作)
     """
-    if not confirm:
-        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return kubectl.delete(resource, name, namespace or None)
+    return kubectl.delete(resource, name, namespace or None, force, grace_period)
 
 
 @mcp.tool()
@@ -449,14 +449,17 @@ def kubectl_exec(pod: str, command: str, namespace: str = "default", container: 
 
 
 @mcp.tool()
-def kubectl_get_events(namespace: str = "", field_selector: str = "") -> str:
+def kubectl_get_events(namespace: str = "", resource_name: str = "",
+                       resource_kind: str = "", field_selector: str = "") -> str:
     """Namespace / Pod のイベント一覧を返す（障害原因特定に有効）。
 
     Args:
         namespace: 名前空間。省略時は全 namespace
-        field_selector: フィールドセレクタ (例: involvedObject.name=my-pod)
+        resource_name: 特定リソース名でフィルタ (例: my-pod)
+        resource_kind: リソース種別でフィルタ (例: Pod, Deployment)
+        field_selector: 追加フィールドセレクタ (例: reason=BackOff)
     """
-    return kubectl.get_events(namespace or None, field_selector)
+    return kubectl.get_events(namespace or None, resource_name, resource_kind, field_selector)
 
 
 @mcp.tool()
@@ -659,7 +662,7 @@ def lab_wakeup(mac: str, broadcast: str = "192.168.210.255") -> str:
 
 @mcp.tool()
 def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "",
-             timeout_seconds: int = 30) -> str:
+             timeout_seconds: int = 120) -> str:
     """SSH 経由で VM / ホスト上のコマンドを直接実行する。
 
     Args:
@@ -667,7 +670,7 @@ def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "",
         command: 実行するコマンド (例: "df -h", "systemctl status nginx")
         user: SSH ユーザー名（省略時は SSH_USER 環境変数）
         ssh_key: SSH 秘密鍵パス（省略時は SSH_KEY 環境変数）
-        timeout_seconds: タイムアウト秒数（デフォルト: 30、最大推奨: 300）
+        timeout_seconds: タイムアウト秒数（デフォルト: 120、最大推奨: 300）
     """
     return lab.exec(host, command, user, ssh_key, timeout_seconds)
 
@@ -754,14 +757,14 @@ def argocd_list_apps(project: str = "") -> str:
 
 
 @mcp.tool()
-def argocd_get_app(name: str) -> str:
+def argocd_get_app(app_name: str) -> str:
     """指定 ArgoCD アプリケーションの詳細（sync/health/リソース一覧）を返す。
 
     Args:
-        name: アプリケーション名
+        app_name: アプリケーション名
     """
     try:
-        return json.dumps(argocd.get_app(name), ensure_ascii=False, indent=2)
+        return json.dumps(argocd.get_app(app_name), ensure_ascii=False, indent=2)
     except Exception as e:
         return f"ERROR: {e}"
 

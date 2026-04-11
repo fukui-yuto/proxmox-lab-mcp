@@ -27,6 +27,8 @@ SSH_KEY = os.getenv("SSH_KEY", "")
 ARGOCD_SERVER = os.getenv("ARGOCD_SERVER", "")
 ARGOCD_TOKEN = os.getenv("ARGOCD_TOKEN", "")
 ARGOCD_VERIFY_SSL = os.getenv("ARGOCD_VERIFY_SSL", "false").lower() == "true"
+ARGOCD_USERNAME = os.getenv("ARGOCD_USERNAME", "")
+ARGOCD_PASSWORD = os.getenv("ARGOCD_PASSWORD", "")
 
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8000"))

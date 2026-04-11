@@ -1,177 +1,255 @@
-# MCP サーバー 問題点・改善要望まとめ
+# MCP サーバー 改善課題
+
+このセッション (2026-04-11) で発見された MCP ツールの問題・改善点をまとめる。
 
 ---
 
-## 既知の不具合
+## 1. `lab_exec` — SSH ホストキー変更時に接続失敗
 
-### 1. lab_exec が SSH 接続できない (Pi への root 接続)
+**症状:**
+```
+WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!
+Offending ED25519 key in /root/.ssh/known_hosts:25
+Host key verification failed. [exit_code] 255
+```
 
-**症状**
-- `host: 192.168.210.55` (Raspberry Pi) への接続が `Permission denied (publickey,password)` で失敗
+**原因:**
+VM 再作成後にホストキーが変わると、既存の `known_hosts` エントリと衝突して接続できない。
+現在の実装は `StrictHostKeyChecking=accept-new` を使っているが、これは **新規ホストのみ** 自動登録し、既存エントリと異なるキーは拒否する。
 
-**影響**
-- ラボ管理端末 (Pi) で kubectl / ansible / terraform を実行できない
-- k3s-master (192.168.210.21) に ubuntu ユーザーで接続することで一部回避できるが毎回 host key 警告が出る
+**対処案:**
+`StrictHostKeyChecking=no` + `UserKnownHostsFile=/dev/null` に変更する（ラボ内ホスト限定のため MITM リスクは許容範囲）。
 
-**要望**
-- 接続ユーザーを設定ファイルや環境変数で指定できるようにする
-- ホストごとにユーザー・鍵ファイルを設定できるようにする
+```python
+# lab.py の SSH コマンド部分
+"-o", "StrictHostKeyChecking=no",
+"-o", "UserKnownHostsFile=/dev/null",
+```
 
----
-
-### 2. lab_exec がハング → MCP サーバー全体がフリーズ 【最優先】
-
-**症状**
-- `lab_exec` が出力なしで無応答になることがある
-- 以降の全 MCP ツール呼び出しも無応答になり、Claude Code 再起動が必要
-
-**再現ケース**
-- `sleep 30 && kubectl get ...` のような長時間コマンド実行時
-- 複数回 lab_exec を連続実行した後
-
-**要望**
-- コマンドタイムアウトを設定可能にする（デフォルト 30 秒など）
-- タイムアウト時は明示的なエラーメッセージを返す
-- 1 コマンドのハングで MCP サーバー全体が止まらないよう非同期処理を改善する
+または、接続失敗時に `ssh-keygen -R <host>` で古いキーを削除してリトライする仕組みを追加する。
 
 ---
 
-### 3. kubectl_apply がインライン YAML を受け付けない
+## 2. `lab_exec` — デフォルトタイムアウト 30 秒が短すぎる
 
-**症状**
-- `manifest` パラメータにファイルパスしか渡せず、YAML 文字列を渡すと「the path ... does not exist」エラー
+**症状:**
+```
+ERROR: コマンドがタイムアウトしました (30秒)。コマンド: sudo kubectl get pods -A ...
+```
 
-**影響**
-- git push → ラボ側でパスを指定、という回り道が必要
-- 未 push のマニフェストをその場で apply できない
+**原因:**
+クラスター全体を対象にした `kubectl` コマンド、Ansible playbook、`journalctl` 等は 30 秒を超えることが多い。
 
-**要望**
-- YAML 文字列をインラインで渡せるようにする（ファイルパスか文字列かを自動判定、または別パラメータ `manifest_content` を追加）
+**対処案:**
+デフォルトを 60〜120 秒に変更する。または呼び出し側が指定できる `timeout_seconds` パラメータのデフォルト値を増やす。
 
----
-
-### 4. SSH host key mismatch 警告がノイズになる
-
-**症状**
-- k3s-master への接続時に毎回 `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!` が出力に混入する
-
-**要望**
-- `StrictHostKeyChecking=accept-new` を使用する、または known_hosts を自動更新する
-- 少なくとも SSH 警告を stderr として分離し、ツール出力に混入しないようにする
+```python
+# lab.py
+def exec(host: str, command: str, user: str = "root",
+         timeout_seconds: int = 120) -> str:  # 30 → 120
+```
 
 ---
 
-### 5. kubectl_apply のパス解決がラボ側基準
+## 3. `kubectl_rollout_status` — StatefulSet / DaemonSet に非対応
 
-**症状**
-- パスがラボ側 (Raspberry Pi) のファイルシステム基準のため、Windows 側のパスは使えない
+**症状:**
+```
+Error: 1 validation error for kubectl_rollout_statusArguments
+deployment: Field required
+```
 
-**要望**
-- インライン YAML 対応 (#3 と共通) で解消される
+**原因:**
+現実装は `deployment/{name}` に固定:
+```python
+def rollout_status(deployment: str, namespace: str = "default") -> str:
+    return _run(["kubectl", "rollout", "status", f"deployment/{deployment}", ...])
+```
 
----
+**対処案:**
+`resource` パラメータにして、任意のリソース種別に対応する。
 
-## 機能追加の要望
-
-### 6. 不足している kubectl 操作ツール
-
-今回の作業で `lab_exec` に逃げざるを得なかった操作：
-
-| 必要だった操作 | 提案するツール |
-|---------------|---------------|
-| `kubectl patch` | `kubectl_patch` |
-| `kubectl delete` | `kubectl_delete` |
-| `kubectl annotate` | `kubectl_annotate` (または patch で代用) |
-| `kubectl rollout status` | `kubectl_rollout_status` |
-| `kubectl wait --for=condition=...` | `kubectl_wait` |
-| `kubectl top nodes/pods` | `kubectl_top` |
-
----
-
-### 7. kubectl_get の大量出力問題
-
-**症状**
-- `kubectl get pods -A -o yaml` などで出力が巨大になり、ファイルに保存されるが読み取りが面倒
-
-**要望**
-- `jq` フィルタを指定できるパラメータを追加する（例: `jq: '.items[].metadata.name'`）
-- デフォルトで出力を N 行に制限し、超えた場合はファイル保存する現在の動作をオプション化する
-- `kubectl_get` に `output: "wide"` を指定したとき、テーブル形式で返すようにする（現在は `-o wide` 扱いにならないケースがある）
+```python
+def rollout_status(resource: str, namespace: str = "default") -> str:
+    """
+    Args:
+        resource: リソース指定 (例: deployment/nginx, statefulset/postgres, daemonset/fluentd)
+    """
+    return _run(["kubectl", "rollout", "status", resource, "-n", namespace])
+```
 
 ---
 
-### 8. ArgoCD 専用ツール
+## 4. `kubectl_get_events` — 特定リソースでフィルタリングできない
 
-今回 ArgoCD の操作で `lab_exec` + `kubectl patch` で代替したが、専用ツールがあると便利：
+**症状:**
+`kubectl_get_events` に `resource_name` パラメータがなく、Pod 単体のイベントを取得できない。
+代わりに `kubectl_describe` を使うか、`field_selector` に `involvedObject.name=xxx` を手動で渡す必要があった。
 
-| 提案ツール | 相当する操作 |
-|-----------|-------------|
-| `argocd_sync` | `argocd app sync <app>` |
-| `argocd_refresh` | hard refresh のトリガー |
-| `argocd_get_app` | アプリの sync/health 状態取得 |
-| `argocd_list_apps` | 全アプリの一覧と状態 |
+**対処案:**
+`resource_name` と `resource_kind` パラメータを追加する。
 
----
-
-### 9. Helm 操作ツール
-
-ArgoCD 管理のリリースは `helm list` に出ないが、直接 Helm で管理している場合に有用：
-
-| 提案ツール | 相当する操作 |
-|-----------|-------------|
-| `helm_list` | `helm list -A` |
-| `helm_get_values` | `helm get values <release> -n <ns>` |
-| `helm_show_values` | `helm show values <chart> --version <ver>` |
-
-`helm_show_values` は今回 chart のデフォルト値確認で何度も必要になった。
-
----
-
-### 10. lab_exec の出力改善
-
-**現状の問題**
-- stdout と stderr が混在して返ってくる
-- SSH 警告、kubectl の warning、実際の出力が区別できない
-
-**要望**
-- `stdout` / `stderr` / `exit_code` を分けて返す
-- `exit_code != 0` のときは明示的にエラーとして扱う
+```python
+def get_events(namespace: str | None = None,
+               resource_name: str = "",
+               resource_kind: str = "",
+               field_selector: str = "") -> str:
+    args = ["kubectl", "get", "events", "--sort-by=.lastTimestamp"]
+    if namespace:
+        args += ["-n", namespace]
+    selectors = []
+    if resource_name:
+        selectors.append(f"involvedObject.name={resource_name}")
+    if resource_kind:
+        selectors.append(f"involvedObject.kind={resource_kind}")
+    if field_selector:
+        selectors.append(field_selector)
+    if selectors:
+        args += ["--field-selector", ",".join(selectors)]
+    return _run(args)
+```
 
 ---
 
-### 11. kubectl_describe ツールの引数仕様が不明確
+## 5. `kubectl_logs` — パラメータ名の不一致
 
-**症状**
-- `resource` と `name` を別パラメータで渡す必要があるが、`kubectl describe pod mypod` のように `resource` に `pod mypod` を渡せない
+**症状:**
+```
+Error: 1 validation error for kubectl_logsArguments
+pod: Field required [input_value={'pod_name': 'harbor-trivy-0', ...}]
+```
 
-**要望**
-- `kubectl describe <resource> <name>` の形式をそのまま受け付けられるようにする
-- または使い方をドキュメント・ツール説明文に明記する
+**原因:**
+ツールの実装は `pod` だが、ツール説明に `pod_name` と記述されている箇所があり混乱する。
+
+**対処案:**
+パラメータ名を `pod_name` に統一するか、ドキュメントを `pod` に合わせる。
 
 ---
 
-### 12. ツールのタイムアウトをパラメータで指定できるようにする
+## 6. `kubectl_delete` — Pod 削除が詰まる問題への対応
 
-**要望**
-- `lab_exec` や `kubectl_*` ツールに `timeout_seconds` パラメータを追加する
-- 長時間かかる操作（ArgoCD sync 待機など）に対応できるようにする
-- デフォルト: 30 秒、最大: 300 秒など
+**症状:**
+Longhorn ボリューム付き Pod や、kyverno webhook 障害時に `kubectl delete pod` が詰まって応答しなくなる。
+
+**現状:**
+`kubectl_delete` は単純に `kubectl delete <resource> <name>` を実行するだけで、タイムアウト・フォース削除オプションがない。
+
+**対処案:**
+`force` オプションと `grace_period` オプションを追加する。
+
+```python
+def delete(resource: str, name: str, namespace: str | None = None,
+           force: bool = False, grace_period: int = -1) -> str:
+    args = ["kubectl", "delete", resource, name]
+    if namespace:
+        args += ["-n", namespace]
+    if force:
+        args += ["--force"]
+    if grace_period >= 0:
+        args += [f"--grace-period={grace_period}"]
+    return _run(args)
+```
+
+また、タイムアウトを設定して詰まりを防ぐ:
+```python
+# _run() にタイムアウトを追加 (例: 30s)
+result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+```
+
+---
+
+## 7. ArgoCD — セッション切れ後に自動再認証しない
+
+**症状:**
+```
+ERROR: ArgoCD API エラー 401: {"error":"invalid session: account password has changed since token issued"}
+```
+
+**原因:**
+ArgoCD のパスワード変更や長時間経過後にトークンが無効化されると、MCP サーバーが再ログインせずエラーを返し続ける。
+
+**対処案:**
+401 エラー時に `argocd login` を再実行してトークンを更新し、リトライする。
+
+```python
+# argocd.py
+def _argocd(args: list[str]) -> str:
+    result = _run(args)
+    if "invalid session" in result or "401" in result:
+        _login()  # 再認証
+        result = _run(args)  # リトライ
+    return result
+```
+
+---
+
+## 8. `kubectl_get` — jq フィルタのパースエラー
+
+**症状:**
+```
+jq: parse error: Invalid numeric literal at line 9, column 6
+```
+
+**原因:**
+Claude が渡す jq フィルタ式（特に `select()` や数値比較を含む複雑な式）が、Python 側のエスケープ処理やシェル経由の引数渡しで破損することがある。
+
+**対処案:**
+jq をシェル経由ではなく、`subprocess` で直接 stdin にフィルタを渡す。
+
+```python
+# jq フィルタをファイルまたは stdin で渡す
+result = subprocess.run(
+    ["jq", "-r", jq_filter],
+    input=json_output,
+    capture_output=True, text=True
+)
+```
+
+または、`--arg` や `--argjson` を使って jq に安全に値を渡す。
+
+---
+
+## 9. `argocd_get_app` — パラメータ名の不一致
+
+**症状:**
+```
+Error: 1 validation error for argocd_get_appArguments
+name: Field required [input_value={'app_name': 'harbor'}, ...]
+```
+
+**原因:**
+`argocd_get_app` のパラメータ名が `name` だが、ツール説明文に `app_name` と記述されている。
+
+**対処案:**
+パラメータ名を `app_name` に統一する（他の ArgoCD ツールとも一貫させる）。
+
+---
+
+## 10. `kubectl_delete` の二重確認問題
+
+**現状:**
+Claude Code の UI でユーザーがツール呼び出しを承認 → さらに `confirm=true` が必要という二重確認になっている。
+
+`kubectl_delete (volumeattachment, csi-xxx...)` → ユーザーが承認を拒否 → Claude が `confirm=true` を付けて再試行 → 再度ユーザーが承認 という流れになり、ユーザー体験が悪い。
+
+**対処案:**
+Claude Code の UI がすでに確認ステップになっているため、`confirm` パラメータは削除するか、デフォルト `true` にする。
+あるいは、`kubectl_delete` を完全に廃止して `kubectl_patch` でのファイナライザ削除 + スケール操作で代替する方法を検討する。
 
 ---
 
 ## 優先度まとめ
 
-| # | 内容 | 優先度 | 難易度 |
-|---|------|--------|--------|
-| 2 | lab_exec ハング → MCP 全体フリーズ | **高** | 中 |
-| 3 | kubectl_apply インライン YAML 非対応 | **高** | 低 |
-| 6 | 不足 kubectl ツール (patch/delete/wait 等) | **高** | 低〜中 |
-| 8 | ArgoCD 専用ツール | 中 | 中 |
-| 10 | lab_exec の stdout/stderr 分離 | 中 | 低 |
-| 7 | kubectl_get 大量出力・jq フィルタ | 中 | 低 |
-| 12 | ツールのタイムアウトパラメータ | 中 | 低 |
-| 1 | lab_exec SSH ユーザー設定 | 中 | 低 |
-| 9 | Helm 操作ツール | 低 | 低 |
-| 4 | SSH host key 警告ノイズ | 低 | 低 |
-| 11 | kubectl_describe 引数仕様 | 低 | 低 |
-| 5 | kubectl_apply パス解決 (#3 で解消) | - | - |
+| # | 課題 | 影響度 | 対応コスト | 状態 |
+|---|------|--------|-----------|------|
+| 1 | `lab_exec` SSH ホストキー問題 | 高 (接続不可) | 低 | ✅ 対応済 |
+| 2 | `lab_exec` タイムアウト | 高 (頻発) | 低 | ✅ 対応済 |
+| 3 | `kubectl_rollout_status` 汎用化 | 中 | 低 | ✅ 対応済 |
+| 4 | `kubectl_get_events` フィルタ | 中 | 低 | ✅ 対応済 |
+| 6 | `kubectl_delete` 詰まり対策 | 高 | 中 | ✅ 対応済 |
+| 7 | ArgoCD 自動再認証 | 中 | 中 | ✅ 対応済 |
+| 8 | jq パースエラー | 中 | 中 | ✅ 対応済 |
+| 5 | `kubectl_logs` パラメータ名 | 低 | 低 | ✅ 対応済 |
+| 9 | `argocd_get_app` パラメータ名 | 低 | 低 | ✅ 対応済 |
+| 10 | `kubectl_delete` 二重確認 | 低 | 中 | ✅ 対応済 |
