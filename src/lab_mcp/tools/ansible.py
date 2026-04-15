@@ -32,6 +32,8 @@ def run_module(hosts: str, module: str, args: str = "") -> str:
     cmd = ["ansible", "-i", "inventory/hosts.yml", hosts, "-m", module]
     if args:
         cmd += ["-a", args]
+    if module == "shell":
+        cmd += ["-v"]  # stderr も出力に含める
     return _run(cmd)
 
 

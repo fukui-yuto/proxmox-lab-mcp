@@ -148,8 +148,18 @@ def proxmox_rollback_snapshot(node: str, vmid: int, snapname: str, vm_type: str 
 # ── Terraform ────────────────────────────────────────────────────────────────
 
 @mcp.tool()
+def git_pull() -> str:
+    """git pull でリポジトリを最新化する。
+    Windows での編集を terraform_plan/apply に反映するために使用する。
+    """
+    return terraform.git_pull()
+
+
+@mcp.tool()
 def terraform_plan() -> str:
-    """terraform plan を実行して差分を返す。TERRAFORM_DIR で実行される。"""
+    """terraform plan を実行して差分を返す。TERRAFORM_DIR で実行される。
+    Windows で main.tf を編集した場合は先に git_pull を実行すること。
+    """
     return terraform.plan()
 
 
@@ -178,6 +188,7 @@ def terraform_output() -> str:
 @mcp.tool()
 def terraform_apply(confirm: bool = False) -> str:
     """terraform apply を実行する。破壊的操作のため confirm=true が必須。
+    実行前に git_pull で最新コードを取得していることを確認すること。
 
     Args:
         confirm: true を明示しないと実行されない
@@ -664,11 +675,12 @@ def lab_wakeup(mac: str, broadcast: str = "192.168.210.255") -> str:
 def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "",
              timeout_seconds: int = 120) -> str:
     """SSH 経由で VM / ホスト上のコマンドを直接実行する。
+    VM (k3s worker 等) には user="ubuntu"、Proxmox ホストには user="root" を指定する。
 
     Args:
         host: 接続先ホスト名または IP アドレス
         command: 実行するコマンド (例: "df -h", "systemctl status nginx")
-        user: SSH ユーザー名（省略時は SSH_USER 環境変数）
+        user: SSH ユーザー名（省略時は SSH_USER 環境変数）。VM は "ubuntu"、Proxmox は "root"
         ssh_key: SSH 秘密鍵パス（省略時は SSH_KEY 環境変数）
         timeout_seconds: タイムアウト秒数（デフォルト: 120、最大推奨: 300）
     """

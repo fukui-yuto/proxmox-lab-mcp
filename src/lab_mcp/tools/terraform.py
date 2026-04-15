@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 from lab_mcp import config
 
 
@@ -46,3 +47,15 @@ def validate() -> str:
 def destroy() -> str:
     """terraform destroy を実行する（confirm 必須）。"""
     return _run(["destroy", "-auto-approve", "-no-color"])
+
+
+def git_pull() -> str:
+    """git pull で TERRAFORM_DIR のリポジトリを最新化する。"""
+    repo_dir = str(Path(config.TERRAFORM_DIR).parent)
+    result = subprocess.run(
+        ["git", "pull", "origin", "main"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+    )
+    return (result.stdout + result.stderr).strip()
