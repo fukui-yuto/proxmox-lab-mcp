@@ -56,8 +56,12 @@ ArgoCD ツールを使用する場合（任意）:
 | 変数名 | 説明 |
 |---|---|
 | `ARGOCD_SERVER` | ArgoCD サーバー URL (例: `http://argocd.homelab.local`) |
-| `ARGOCD_TOKEN` | ArgoCD API トークン（期限なし）|
+| `ARGOCD_TOKEN` | ArgoCD API トークン（`expiresIn=0` で生成、パスワード変更で無効化されない）|
+| `ARGOCD_USERNAME` | 自動再ログイン用ユーザー名（設定すると 401 時に自動復旧）|
+| `ARGOCD_PASSWORD` | 自動再ログイン用パスワード（設定すると 401 時に自動復旧）|
 | `ARGOCD_VERIFY_SSL` | SSL 検証 (`true`/`false`、デフォルト: `false`) |
+
+> **自動再ログインの仕組み:** `ARGOCD_TOKEN` が期限切れ・無効になった場合、`ARGOCD_USERNAME` / `ARGOCD_PASSWORD` が設定されていれば自動でセッションを再取得してリトライする。両方設定しておくことを推奨。
 
 **ArgoCD API トークンの取得方法:**
 
@@ -66,15 +70,25 @@ ArgoCD ツールを使用する場合（任意）:
 kubectl -n argocd patch configmap argocd-cm \
   -p '{"data": {"accounts.admin": "apiKey,login"}}'
 
-# セッショントークンを取得してからAPIトークンを生成
-SESSION=$(curl -sk -X POST https://<argocd-url>/api/v1/session \
+# セッショントークンを取得してから永続 API トークンを生成
+SESSION=$(curl -sk -X POST http://argocd.homelab.local/api/v1/session \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"<password>"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
-curl -sk -X POST https://<argocd-url>/api/v1/account/admin/token \
+curl -sk -X POST http://argocd.homelab.local/api/v1/account/admin/token \
   -H "Authorization: Bearer $SESSION" \
   -H 'Content-Type: application/json' \
   -d '{"expiresIn": 0, "id": "mcp-token"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])"
+```
+
+取得したトークンを `.env` の `ARGOCD_TOKEN` に設定し、サービスを再起動する:
+
+```bash
+# .env を編集して ARGOCD_TOKEN を更新
+vi /root/proxmox-lab-mcp/.env
+
+# MCP サービスを再起動
+sudo systemctl restart proxmox-lab-mcp
 ```
 
 また、Pi の `/etc/hosts` に ArgoCD のホスト名を追加しておく必要があります:
