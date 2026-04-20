@@ -11,13 +11,19 @@ mcp = FastMCP("proxmox-lab", host=config.MCP_HOST, port=config.MCP_PORT)
 @mcp.tool()
 def proxmox_list_nodes() -> str:
     """Proxmox クラスタのノード一覧と CPU / メモリ / 稼働状態を返す。"""
-    return json.dumps(proxmox.list_nodes(), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.list_nodes(), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
 def proxmox_list_vms() -> str:
     """全ノードの VM / LXC 一覧（vmid, 名前, 状態, スペック）を返す。"""
-    return json.dumps(proxmox.list_vms(), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.list_vms(), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -29,7 +35,10 @@ def proxmox_get_vm_status(node: str, vmid: int, vm_type: str = "qemu") -> str:
         vmid: VM ID (例: 100)
         vm_type: "qemu" または "lxc"
     """
-    return json.dumps(proxmox.get_vm_status(node, vmid, vm_type), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.get_vm_status(node, vmid, vm_type), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -39,13 +48,19 @@ def proxmox_get_node_resources(node: str) -> str:
     Args:
         node: ノード名 (例: pve1)
     """
-    return json.dumps(proxmox.get_node_resources(node), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.get_node_resources(node), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
 def proxmox_list_storage() -> str:
     """全ノードのストレージプール一覧と使用量を返す。"""
-    return json.dumps(proxmox.list_storage(), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.list_storage(), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 # ── Proxmox 操作系 ───────────────────────────────────────────────────────────
@@ -59,7 +74,10 @@ def proxmox_start_vm(node: str, vmid: int, vm_type: str = "qemu") -> str:
         vmid: VM ID
         vm_type: "qemu" または "lxc"
     """
-    return proxmox.start_vm(node, vmid, vm_type)
+    try:
+        return proxmox.start_vm(node, vmid, vm_type)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -74,7 +92,10 @@ def proxmox_stop_vm(node: str, vmid: int, vm_type: str = "qemu", confirm: bool =
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return proxmox.stop_vm(node, vmid, vm_type)
+    try:
+        return proxmox.stop_vm(node, vmid, vm_type)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -89,7 +110,10 @@ def proxmox_reboot_vm(node: str, vmid: int, vm_type: str = "qemu", confirm: bool
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return proxmox.reboot_vm(node, vmid, vm_type)
+    try:
+        return proxmox.reboot_vm(node, vmid, vm_type)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -101,7 +125,10 @@ def proxmox_list_snapshots(node: str, vmid: int, vm_type: str = "qemu") -> str:
         vmid: VM ID
         vm_type: "qemu" または "lxc"
     """
-    return json.dumps(proxmox.list_snapshots(node, vmid, vm_type), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.list_snapshots(node, vmid, vm_type), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -112,7 +139,10 @@ def proxmox_list_tasks(node: str, limit: int = 20) -> str:
         node: ノード名
         limit: 取得件数 (デフォルト: 20)
     """
-    return json.dumps(proxmox.list_tasks(node, limit), ensure_ascii=False, indent=2)
+    try:
+        return json.dumps(proxmox.list_tasks(node, limit), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -126,7 +156,10 @@ def proxmox_create_snapshot(node: str, vmid: int, snapname: str, description: st
         description: 説明 (任意)
         vm_type: "qemu" または "lxc"
     """
-    return proxmox.create_snapshot(node, vmid, snapname, description, vm_type)
+    try:
+        return proxmox.create_snapshot(node, vmid, snapname, description, vm_type)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 @mcp.tool()
@@ -142,7 +175,116 @@ def proxmox_rollback_snapshot(node: str, vmid: int, snapname: str, vm_type: str 
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return proxmox.rollback_snapshot(node, vmid, snapname, vm_type)
+    try:
+        return proxmox.rollback_snapshot(node, vmid, snapname, vm_type)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_vm_config(node: str, vmid: int, vm_type: str = "qemu") -> str:
+    """VM / LXC の設定詳細（CPU / メモリ / ディスク / ネットワーク）を返す。
+
+    Args:
+        node: ノード名 (例: pve1)
+        vmid: VM ID
+        vm_type: "qemu" または "lxc"
+    """
+    try:
+        return json.dumps(proxmox.get_vm_config(node, vmid, vm_type), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_task_log(node: str, upid: str) -> str:
+    """タスク UPID のログを返す（proxmox_list_tasks で取得した UPID を指定）。
+
+    Args:
+        node: ノード名
+        upid: タスク UPID (例: UPID:pve1:00001234:...)
+    """
+    try:
+        return json.dumps(proxmox.get_task_log(node, upid), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_cluster_status() -> str:
+    """Proxmox クラスター全体の健全性ステータスを返す。"""
+    try:
+        return json.dumps(proxmox.get_cluster_status(), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_list_networks(node: str) -> str:
+    """ノードのネットワーク設定一覧を返す。
+
+    Args:
+        node: ノード名 (例: pve1)
+    """
+    try:
+        return json.dumps(proxmox.list_networks(node), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_replication_status(node: str) -> str:
+    """ノードの ZFS レプリケーションジョブの状態を返す（node01 ↔ node02 の同期確認）。
+
+    Args:
+        node: ノード名 (例: pve-node01)
+    """
+    try:
+        return json.dumps(proxmox.get_replication_status(node), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_backup_jobs(node: str, limit: int = 20) -> str:
+    """vzdump バックアップタスクの履歴を返す。
+
+    Args:
+        node: ノード名
+        limit: 取得件数 (デフォルト: 20)
+    """
+    try:
+        return json.dumps(proxmox.get_backup_jobs(node, limit), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_certificate_info(node: str) -> str:
+    """ノードの TLS 証明書情報と残り有効日数を返す。
+
+    Args:
+        node: ノード名 (例: pve-node01)
+    """
+    try:
+        return json.dumps(proxmox.get_certificate_info(node), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def proxmox_get_storage_content(node: str, storage: str, content_type: str = "") -> str:
+    """ストレージ内のコンテンツ（ISO / テンプレート等）一覧を返す。
+
+    Args:
+        node: ノード名
+        storage: ストレージ名 (例: local, local-lvm)
+        content_type: コンテンツ種別フィルタ (例: iso, vztmpl, images)。省略時は全種別
+    """
+    try:
+        return json.dumps(proxmox.get_storage_content(node, storage, content_type), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
 
 
 # ── Terraform ────────────────────────────────────────────────────────────────
@@ -156,11 +298,29 @@ def git_pull() -> str:
 
 
 @mcp.tool()
+def terraform_init() -> str:
+    """terraform init を実行する（プラグイン取得・バックエンド初期化）。
+    plan/apply 前に provider 未取得エラーが出た場合に使用する。
+    """
+    return terraform.init()
+
+
+@mcp.tool()
 def terraform_plan() -> str:
     """terraform plan を実行して差分を返す。TERRAFORM_DIR で実行される。
     Windows で main.tf を編集した場合は先に git_pull を実行すること。
     """
     return terraform.plan()
+
+
+@mcp.tool()
+def terraform_plan_target(target: str) -> str:
+    """特定リソースのみの terraform plan を実行する。
+
+    Args:
+        target: リソースアドレス (例: proxmox_vm_qemu.k3s_node[0])
+    """
+    return terraform.plan_target(target)
 
 
 @mcp.tool()
@@ -186,16 +346,55 @@ def terraform_output() -> str:
 
 
 @mcp.tool()
-def terraform_apply(confirm: bool = False) -> str:
+def terraform_output_json() -> str:
+    """terraform output を JSON 形式で返す（値の解析に便利）。"""
+    return terraform.output_json()
+
+
+@mcp.tool()
+def terraform_validate() -> str:
+    """terraform validate で構文検証を行う（apply なし）。TERRAFORM_DIR で実行される。"""
+    return terraform.validate()
+
+
+@mcp.tool()
+def terraform_show() -> str:
+    """terraform show で現在の state サマリーを返す。全リソースの属性を確認できる。"""
+    return terraform.show()
+
+
+@mcp.tool()
+def terraform_providers() -> str:
+    """使用中の Terraform provider 一覧とバージョンを返す。"""
+    return terraform.providers()
+
+
+@mcp.tool()
+def terraform_apply(confirm: bool = False, target: str = "") -> str:
     """terraform apply を実行する。破壊的操作のため confirm=true が必須。
     実行前に git_pull で最新コードを取得していることを確認すること。
+
+    Args:
+        confirm: true を明示しないと実行されない
+        target: 特定リソースのみ適用する場合のアドレス (省略時は全体)
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    if target:
+        return terraform.apply_target(target)
+    return terraform.apply()
+
+
+@mcp.tool()
+def terraform_destroy(confirm: bool = False) -> str:
+    """terraform destroy を実行する。破壊的操作のため confirm=true が必須。
 
     Args:
         confirm: true を明示しないと実行されない
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return terraform.apply()
+    return terraform.destroy()
 
 
 # ── Ansible ──────────────────────────────────────────────────────────────────
@@ -217,16 +416,53 @@ def ansible_list_inventory() -> str:
 
 
 @mcp.tool()
-def ansible_run_playbook(playbook: str, confirm: bool = False) -> str:
+def ansible_run_playbook(playbook: str, confirm: bool = False, tags: str = "", limit: str = "") -> str:
     """指定 playbook を実行する。破壊的操作のため confirm=true が必須。
 
     Args:
         playbook: playbook ファイルパス (例: site.yml)
         confirm: true を明示しないと実行されない
+        tags: 実行対象タグ (カンマ区切り, 例: "setup,deploy")
+        limit: 対象ホスト制限 (例: "webservers", "192.168.1.10")
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return ansible.run_playbook(playbook)
+    return ansible.run_playbook(playbook, tags, limit)
+
+
+@mcp.tool()
+def ansible_check_playbook(playbook: str, limit: str = "") -> str:
+    """playbook を --check (dry-run) モードで実行し、変更予定を確認する。
+    実際には変更を加えない安全な操作。
+
+    Args:
+        playbook: playbook ファイルパス (例: site.yml)
+        limit: 対象ホスト制限 (例: "webservers")
+    """
+    return ansible.check_playbook(playbook, limit)
+
+
+@mcp.tool()
+def ansible_run_module(hosts: str, module: str, args: str = "") -> str:
+    """アドホックモジュールを実行する（ping 以外の任意モジュール）。
+
+    Args:
+        hosts: 対象ホスト/グループ (例: all, webservers, 192.168.1.10)
+        module: モジュール名 (例: shell, command, setup, copy, file, systemd)
+        args: モジュール引数 (例: "cmd='uptime'", "src=/tmp/a dest=/tmp/b")
+    """
+    return ansible.run_module(hosts, module, args)
+
+
+@mcp.tool()
+def ansible_get_facts(hosts: str = "all", filter: str = "") -> str:
+    """ホストの facts（OS / ハードウェア情報）を収集して返す。
+
+    Args:
+        hosts: 対象ホスト/グループ (デフォルト: all)
+        filter: facts フィルタ (例: ansible_distribution, ansible_memtotal_mb, ansible_default_ipv4)
+    """
+    return ansible.get_facts(hosts, filter)
 
 
 # ── kubectl / Helm ───────────────────────────────────────────────────────────
@@ -237,7 +473,7 @@ def kubectl_get(resource: str, namespace: str = "", label_selector: str = "",
     """kubectl get <resource> を実行する。
 
     Args:
-        resource: リソース種別 (例: pods, nodes, deployments)
+        resource: リソース種別 (例: pods, nodes, deployments, services, ingress)
         namespace: 名前空間。省略時は全 namespace
         label_selector: ラベルセレクタ (例: app=nginx, env=prod)
         output: 出力形式 (例: wide, yaml, json。デフォルト: wide)
@@ -251,7 +487,7 @@ def kubectl_describe(resource: str, name: str, namespace: str = "") -> str:
     """kubectl describe <resource> <name> を実行する。
 
     Args:
-        resource: リソース種別 (例: pod, node, deployment)
+        resource: リソース種別 (例: pod, node, deployment, service)
         name: リソース名
         namespace: 名前空間。省略時はデフォルト
     """
@@ -264,7 +500,7 @@ def kubectl_logs(pod_name: str, namespace: str = "default", tail: int = 100,
     """Pod のログを取得する。
 
     Args:
-        pod_name: Pod 名
+        pod_name: Pod 名（ラベルセレクタも可: -l app=nginx）
         namespace: 名前空間 (デフォルト: default)
         tail: 末尾から取得する行数 (デフォルト: 100)
         previous: クラッシュ前のコンテナのログを取得 (CrashLoopBackOff 調査に有効)
@@ -272,6 +508,92 @@ def kubectl_logs(pod_name: str, namespace: str = "default", tail: int = 100,
         since: 指定期間以降のログを取得 (例: 1h, 30m, 2006-01-02T15:04:05Z)
     """
     return kubectl.logs(pod_name, namespace, tail, previous, container, since)
+
+
+@mcp.tool()
+def kubectl_get_events(namespace: str = "", resource_name: str = "",
+                       resource_kind: str = "", field_selector: str = "") -> str:
+    """Namespace / Pod のイベント一覧を返す（障害原因特定に有効）。
+
+    Args:
+        namespace: 名前空間。省略時は全 namespace
+        resource_name: 特定リソース名でフィルタ (例: my-pod)
+        resource_kind: リソース種別でフィルタ (例: Pod, Deployment, Node)
+        field_selector: 追加フィールドセレクタ (例: reason=BackOff, type=Warning)
+    """
+    return kubectl.get_events(namespace or None, resource_name, resource_kind, field_selector)
+
+
+@mcp.tool()
+def kubectl_get_secret(name: str, namespace: str = "default", decode: bool = False) -> str:
+    """Secret の内容を返す。デフォルトではマスク、decode=true でデコード済み値を表示。
+
+    Args:
+        name: Secret 名
+        namespace: 名前空間 (デフォルト: default)
+        decode: true で base64 デコードした実際の値を表示（機密情報注意）
+    """
+    return kubectl.get_secret(name, namespace, decode)
+
+
+@mcp.tool()
+def kubectl_get_configmap(name: str, namespace: str = "default") -> str:
+    """ConfigMap の内容を返す。
+
+    Args:
+        name: ConfigMap 名
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.get_configmap(name, namespace)
+
+
+@mcp.tool()
+def kubectl_top(resource: str = "nodes", namespace: str = "") -> str:
+    """Node / Pod のリソース使用量を返す。
+
+    Args:
+        resource: "nodes" または "pods" (デフォルト: nodes)
+        namespace: pods の場合の名前空間。省略時は全 namespace
+    """
+    return kubectl.top(resource, namespace or None)
+
+
+@mcp.tool()
+def kubectl_get_pvc(namespace: str = "", label_selector: str = "") -> str:
+    """PersistentVolumeClaim の一覧と状態を返す（ストレージ問題の調査に有用）。
+
+    Args:
+        namespace: 名前空間。省略時は全 namespace
+        label_selector: ラベルセレクタ (例: app=postgres)
+    """
+    return kubectl.get_pvc(namespace or None, label_selector)
+
+
+@mcp.tool()
+def kubectl_get_pv() -> str:
+    """PersistentVolume の一覧と状態を返す（クラスター全体のストレージ確認）。"""
+    return kubectl.get_pv()
+
+
+@mcp.tool()
+def kubectl_get_ingress(namespace: str = "") -> str:
+    """Ingress リソースの一覧を返す（外部アクセス設定の確認）。
+
+    Args:
+        namespace: 名前空間。省略時は全 namespace
+    """
+    return kubectl.get_ingress(namespace or None)
+
+
+@mcp.tool()
+def kubectl_get_endpoints(name: str = "", namespace: str = "") -> str:
+    """Endpoints の一覧を返す（Service → Pod の接続確認に有用）。
+
+    Args:
+        name: Endpoints 名（Service 名と同じ）。省略時は全て
+        namespace: 名前空間。省略時は全 namespace
+    """
+    return kubectl.get_endpoints(name, namespace or None)
 
 
 @mcp.tool()
@@ -304,6 +626,17 @@ def helm_show_values(chart: str, version: str = "") -> str:
         version: チャートバージョン (省略時は最新)
     """
     return kubectl.helm_show_values(chart, version)
+
+
+@mcp.tool()
+def helm_history(release: str, namespace: str = "default") -> str:
+    """Helm リリースの履歴（リビジョン一覧）を返す。ロールバック先の確認に有用。
+
+    Args:
+        release: リリース名
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.helm_history(release, namespace)
 
 
 # ── kubectl 操作系 ───────────────────────────────────────────────────────────
@@ -342,6 +675,38 @@ def kubectl_rollout_restart(resource: str, namespace: str = "default") -> str:
         namespace: 名前空間 (デフォルト: default)
     """
     return kubectl.rollout_restart(resource, namespace)
+
+
+@mcp.tool()
+def kubectl_scale(resource: str, replicas: int, namespace: str = "default") -> str:
+    """Deployment / StatefulSet のレプリカ数を変更する。
+
+    Args:
+        resource: リソース指定 (例: deployment/nginx, statefulset/postgres)
+        replicas: レプリカ数
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.scale(resource, replicas, namespace)
+
+
+@mcp.tool()
+def kubectl_cordon(node: str) -> str:
+    """ノードをスケジュール不可にする（メンテナンス準備）。
+
+    Args:
+        node: ノード名
+    """
+    return kubectl.cordon(node)
+
+
+@mcp.tool()
+def kubectl_uncordon(node: str) -> str:
+    """ノードのスケジュールを再開する（メンテナンス完了後）。
+
+    Args:
+        node: ノード名
+    """
+    return kubectl.uncordon(node)
 
 
 @mcp.tool()
@@ -389,17 +754,6 @@ def kubectl_wait(resource: str, condition: str, namespace: str = "",
 
 
 @mcp.tool()
-def kubectl_top(resource: str = "nodes", namespace: str = "") -> str:
-    """Node / Pod のリソース使用量を返す。
-
-    Args:
-        resource: "nodes" または "pods" (デフォルト: nodes)
-        namespace: pods の場合の名前空間。省略時は全 namespace
-    """
-    return kubectl.top(resource, namespace or None)
-
-
-@mcp.tool()
 def kubectl_delete(resource: str, name: str, namespace: str = "",
                    force: bool = False, grace_period: int = -1) -> str:
     """kubectl delete <resource> <name> を実行する。
@@ -412,6 +766,44 @@ def kubectl_delete(resource: str, name: str, namespace: str = "",
         grace_period: グレースピリオド秒数 (0 で即時削除。省略時はデフォルト動作)
     """
     return kubectl.delete(resource, name, namespace or None, force, grace_period)
+
+
+@mcp.tool()
+def kubectl_exec(pod: str, command: str, namespace: str = "default", container: str = "") -> str:
+    """Pod 内でコマンドを実行する（シェル調査・疎通確認等）。
+
+    Args:
+        pod: Pod 名
+        command: 実行するコマンド (例: "ls -la /tmp", "cat /etc/hosts", "curl localhost:8080/health")
+        namespace: 名前空間 (デフォルト: default)
+        container: コンテナ名（複数コンテナ Pod の場合に指定）
+    """
+    return kubectl.exec(pod, command, namespace, container)
+
+
+@mcp.tool()
+def kubectl_run(image: str, command: str, namespace: str = "default") -> str:
+    """一時 Pod でコマンドを実行して出力を返す（Pod は自動削除）。
+    ネットワーク疎通確認やデバッグに有用。
+
+    Args:
+        image: コンテナイメージ (例: busybox, curlimages/curl, nicolaka/netshoot)
+        command: 実行するコマンド (例: "nslookup kubernetes.default", "wget -qO- http://svc.ns:80")
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.run_pod(image, command, namespace)
+
+
+@mcp.tool()
+def kubectl_port_forward(resource: str, ports: str, namespace: str = "default") -> str:
+    """kubectl port-forward をバックグラウンドで開始する。
+
+    Args:
+        resource: 転送先リソース (例: pod/my-pod, svc/my-svc, deployment/my-deploy)
+        ports: ポートマッピング (例: 8080:80, 5432:5432)
+        namespace: 名前空間 (デフォルト: default)
+    """
+    return kubectl.port_forward(resource, ports, namespace)
 
 
 @mcp.tool()
@@ -444,207 +836,20 @@ def helm_uninstall(release: str, namespace: str = "default", confirm: bool = Fal
     return kubectl.helm_uninstall(release, namespace)
 
 
-# ── kubectl 調査系（追加） ────────────────────────────────────────────────────
-
 @mcp.tool()
-def kubectl_exec(pod: str, command: str, namespace: str = "default", container: str = "") -> str:
-    """Pod 内でコマンドを実行する（シェル調査・疎通確認等）。
+def helm_rollback(release: str, revision: int, namespace: str = "default", confirm: bool = False) -> str:
+    """helm rollback でリリースを指定リビジョンに戻す。破壊的操作のため confirm=true が必須。
+    helm_history でリビジョン番号を確認してから使用する。
 
     Args:
-        pod: Pod 名
-        command: 実行するコマンド (例: "ls -la /tmp", "cat /etc/hosts")
+        release: リリース名
+        revision: 戻すリビジョン番号
         namespace: 名前空間 (デフォルト: default)
-        container: コンテナ名（複数コンテナ Pod の場合に指定）
-    """
-    return kubectl.exec(pod, command, namespace, container)
-
-
-@mcp.tool()
-def kubectl_get_events(namespace: str = "", resource_name: str = "",
-                       resource_kind: str = "", field_selector: str = "") -> str:
-    """Namespace / Pod のイベント一覧を返す（障害原因特定に有効）。
-
-    Args:
-        namespace: 名前空間。省略時は全 namespace
-        resource_name: 特定リソース名でフィルタ (例: my-pod)
-        resource_kind: リソース種別でフィルタ (例: Pod, Deployment)
-        field_selector: 追加フィールドセレクタ (例: reason=BackOff)
-    """
-    return kubectl.get_events(namespace or None, resource_name, resource_kind, field_selector)
-
-
-@mcp.tool()
-def kubectl_get_secret(name: str, namespace: str = "default") -> str:
-    """Secret の内容をマスク付きで返す（値は *** に置換）。
-
-    Args:
-        name: Secret 名
-        namespace: 名前空間 (デフォルト: default)
-    """
-    return kubectl.get_secret(name, namespace)
-
-
-@mcp.tool()
-def kubectl_get_configmap(name: str, namespace: str = "default") -> str:
-    """ConfigMap の内容を返す。
-
-    Args:
-        name: ConfigMap 名
-        namespace: 名前空間 (デフォルト: default)
-    """
-    return kubectl.get_configmap(name, namespace)
-
-
-@mcp.tool()
-def kubectl_run(image: str, command: str, namespace: str = "default") -> str:
-    """一時 Pod でコマンドを実行して出力を返す（Pod は自動削除）。
-
-    Args:
-        image: コンテナイメージ (例: busybox, curlimages/curl)
-        command: 実行するコマンド (例: "nslookup kubernetes.default")
-        namespace: 名前空間 (デフォルト: default)
-    """
-    return kubectl.run_pod(image, command, namespace)
-
-
-@mcp.tool()
-def kubectl_port_forward(resource: str, ports: str, namespace: str = "default") -> str:
-    """kubectl port-forward をバックグラウンドで開始する。
-
-    Args:
-        resource: 転送先リソース (例: pod/my-pod, svc/my-svc, deployment/my-deploy)
-        ports: ポートマッピング (例: 8080:80, 5432:5432)
-        namespace: 名前空間 (デフォルト: default)
-    """
-    return kubectl.port_forward(resource, ports, namespace)
-
-
-# ── Proxmox 調査系（追加） ────────────────────────────────────────────────────
-
-@mcp.tool()
-def proxmox_get_vm_config(node: str, vmid: int, vm_type: str = "qemu") -> str:
-    """VM / LXC の設定詳細（CPU / メモリ / ディスク / ネットワーク）を返す。
-
-    Args:
-        node: ノード名 (例: pve1)
-        vmid: VM ID
-        vm_type: "qemu" または "lxc"
-    """
-    return json.dumps(proxmox.get_vm_config(node, vmid, vm_type), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_get_task_log(node: str, upid: str) -> str:
-    """タスク UPID のログを返す（proxmox_list_tasks で取得した UPID を指定）。
-
-    Args:
-        node: ノード名
-        upid: タスク UPID (例: UPID:pve1:00001234:...)
-    """
-    return json.dumps(proxmox.get_task_log(node, upid), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_get_cluster_status() -> str:
-    """Proxmox クラスター全体の健全性ステータスを返す。"""
-    return json.dumps(proxmox.get_cluster_status(), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_list_networks(node: str) -> str:
-    """ノードのネットワーク設定一覧を返す。
-
-    Args:
-        node: ノード名 (例: pve1)
-    """
-    return json.dumps(proxmox.list_networks(node), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_get_replication_status(node: str) -> str:
-    """ノードの ZFS レプリケーションジョブの状態を返す（node01 ↔ node02 の同期確認）。
-
-    Args:
-        node: ノード名 (例: pve-node01)
-    """
-    return json.dumps(proxmox.get_replication_status(node), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_get_backup_jobs(node: str, limit: int = 20) -> str:
-    """vzdump バックアップタスクの履歴を返す。
-
-    Args:
-        node: ノード名
-        limit: 取得件数 (デフォルト: 20)
-    """
-    return json.dumps(proxmox.get_backup_jobs(node, limit), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_get_certificate_info(node: str) -> str:
-    """ノードの TLS 証明書情報と残り有効日数を返す。
-
-    Args:
-        node: ノード名 (例: pve-node01)
-    """
-    return json.dumps(proxmox.get_certificate_info(node), ensure_ascii=False, indent=2)
-
-
-@mcp.tool()
-def proxmox_get_storage_content(node: str, storage: str, content_type: str = "") -> str:
-    """ストレージ内のコンテンツ（ISO / テンプレート等）一覧を返す。
-
-    Args:
-        node: ノード名
-        storage: ストレージ名 (例: local, local-lvm)
-        content_type: コンテンツ種別フィルタ (例: iso, vztmpl, images)。省略時は全種別
-    """
-    return json.dumps(proxmox.get_storage_content(node, storage, content_type), ensure_ascii=False, indent=2)
-
-
-# ── Ansible 追加 ──────────────────────────────────────────────────────────────
-
-@mcp.tool()
-def ansible_run_module(hosts: str, module: str, args: str = "") -> str:
-    """アドホックモジュールを実行する（ping 以外の任意モジュール）。
-
-    Args:
-        hosts: 対象ホスト/グループ (例: all, webservers, 192.168.1.10)
-        module: モジュール名 (例: shell, command, setup, copy, file)
-        args: モジュール引数 (例: "cmd='uptime'", "src=/tmp/a dest=/tmp/b")
-    """
-    return ansible.run_module(hosts, module, args)
-
-
-@mcp.tool()
-def ansible_get_facts(hosts: str = "all") -> str:
-    """ホストの facts（OS / ハードウェア情報）を収集して返す。
-
-    Args:
-        hosts: 対象ホスト/グループ (デフォルト: all)
-    """
-    return ansible.get_facts(hosts)
-
-
-# ── Terraform 追加 ────────────────────────────────────────────────────────────
-
-@mcp.tool()
-def terraform_validate() -> str:
-    """terraform validate で構文検証を行う（apply なし）。TERRAFORM_DIR で実行される。"""
-    return terraform.validate()
-
-
-@mcp.tool()
-def terraform_destroy(confirm: bool = False) -> str:
-    """terraform destroy を実行する。破壊的操作のため confirm=true が必須。
-
-    Args:
         confirm: true を明示しないと実行されない
     """
     if not confirm:
         return "ERROR: 破壊的操作です。confirm=true を明示してください。"
-    return terraform.destroy()
+    return kubectl.helm_rollback(release, revision, namespace)
 
 
 # ── Lab ユーティリティ ────────────────────────────────────────────────────────
@@ -679,7 +884,7 @@ def lab_exec(host: str, command: str, user: str = "", ssh_key: str = "",
 
     Args:
         host: 接続先ホスト名または IP アドレス
-        command: 実行するコマンド (例: "df -h", "systemctl status nginx")
+        command: 実行するコマンド (例: "df -h", "systemctl status nginx", "journalctl -u kubelet --no-pager -n 50")
         user: SSH ユーザー名（省略時は SSH_USER 環境変数）。VM は "ubuntu"、Proxmox は "root"
         ssh_key: SSH 秘密鍵パス（省略時は SSH_KEY 環境変数）
         timeout_seconds: タイムアウト秒数（デフォルト: 120、最大推奨: 300）
@@ -700,14 +905,54 @@ def lab_check_port(host: str, port: int, timeout: float = 3.0) -> str:
 
 
 @mcp.tool()
-def lab_dns_lookup(host: str, server: str = "") -> str:
+def lab_check_ports(host: str, ports: str, timeout: float = 2.0) -> str:
+    """複数ポートの疎通を一括確認する（サービス状態の素早い把握に有用）。
+
+    Args:
+        host: ホスト名または IP アドレス
+        ports: カンマ区切りのポート番号 (例: "22,80,443,6443,8080")
+        timeout: 各ポートのタイムアウト秒数 (デフォルト: 2.0)
+    """
+    return lab.check_ports(host, ports, timeout)
+
+
+@mcp.tool()
+def lab_dns_lookup(host: str, server: str = "", record_type: str = "") -> str:
     """DNS 名前解決を行う（Pi-hole 経由の確認等）。
 
     Args:
         host: 解決するホスト名または IP（逆引き）
         server: 問い合わせ先 DNS サーバー (例: 192.168.210.1)。省略時はシステムデフォルト
+        record_type: レコードタイプ (例: A, AAAA, CNAME, MX, TXT, PTR)。省略時はデフォルト
     """
-    return lab.dns_lookup(host, server)
+    return lab.dns_lookup(host, server, record_type)
+
+
+@mcp.tool()
+def lab_traceroute(host: str, max_hops: int = 15) -> str:
+    """traceroute でネットワーク経路を確認する。
+
+    Args:
+        host: 宛先ホスト名または IP
+        max_hops: 最大ホップ数 (デフォルト: 15)
+    """
+    return lab.traceroute(host, max_hops)
+
+
+@mcp.tool()
+def lab_curl(url: str, method: str = "GET", headers: str = "", data: str = "",
+             timeout_seconds: int = 30, insecure: bool = False) -> str:
+    """curl で HTTP リクエストを実行する（ラボ内サービスの接続・ヘルスチェックに有用）。
+
+    Args:
+        url: リクエスト先 URL (例: http://argocd.local/healthz, https://192.168.210.10:8006)
+        method: HTTP メソッド (GET, POST, PUT, DELETE 等)
+        headers: ヘッダー（改行区切り, 例: "Content-Type: application/json\\nAuthorization: Bearer xxx")
+        data: リクエストボディ（POST/PUT 用）
+        timeout_seconds: タイムアウト秒数 (デフォルト: 30)
+        insecure: SSL 証明書検証をスキップする (自己署名証明書対応)
+    """
+    return lab.curl(url, method, headers, data, timeout_seconds, insecure)
 
 
 @mcp.tool()
@@ -742,11 +987,20 @@ def lab_cluster_health() -> str:
         unhealthy = [
             line for line in all_pods.splitlines()
             if any(s in line for s in ["CrashLoopBackOff", "Error", "OOMKilled",
-                                        "Pending", "ImagePullBackOff", "Evicted"])
+                                        "Pending", "ImagePullBackOff", "Evicted",
+                                        "CreateContainerConfigError", "Init:Error",
+                                        "Terminating"])
         ]
         result["unhealthy_pods"] = unhealthy if unhealthy else "異常な Pod はありません"
     except Exception as e:
         result["unhealthy_pods"] = {"error": str(e)}
+
+    # ArgoCD OutOfSync アプリ
+    try:
+        oos_apps = argocd.list_out_of_sync()
+        result["argocd_out_of_sync"] = oos_apps if oos_apps else "全アプリが Synced です"
+    except Exception as e:
+        result["argocd_out_of_sync"] = {"error": str(e)}
 
     return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -785,6 +1039,7 @@ def argocd_get_app(app_name: str) -> str:
 def argocd_sync(name: str, revision: str = "", prune: bool = False,
                 dry_run: bool = False) -> str:
     """ArgoCD アプリケーションの sync を実行する。
+    操作が進行中の場合は自動的に終了させてリトライする。
 
     Args:
         name: アプリケーション名
@@ -810,6 +1065,7 @@ def argocd_sync(name: str, revision: str = "", prune: bool = False,
 @mcp.tool()
 def argocd_refresh(name: str, hard: bool = True) -> str:
     """ArgoCD アプリケーションのキャッシュを更新する（hard refresh）。
+    操作が進行中の場合は自動的に終了させてリトライする。
 
     Args:
         name: アプリケーション名
@@ -826,6 +1082,56 @@ def argocd_refresh(name: str, hard: bool = True) -> str:
             ensure_ascii=False,
             indent=2,
         )
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_app_history(app_name: str) -> str:
+    """ArgoCD アプリケーションの sync 履歴を返す（いつ・どのリビジョンがデプロイされたか）。
+
+    Args:
+        app_name: アプリケーション名
+    """
+    try:
+        return json.dumps(argocd.app_history(app_name), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_app_managed_resources(app_name: str) -> str:
+    """ArgoCD アプリケーションの管理リソース一覧（status/health/prune 状態）を返す。
+
+    Args:
+        app_name: アプリケーション名
+    """
+    try:
+        return json.dumps(argocd.app_managed_resources(app_name), ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_list_out_of_sync() -> str:
+    """OutOfSync 状態のアプリケーション一覧を返す（要対応アプリの素早い把握に有用）。"""
+    try:
+        result = argocd.list_out_of_sync()
+        if not result:
+            return "全アプリケーションが Synced 状態です。"
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_list_unhealthy() -> str:
+    """Healthy 以外の状態のアプリケーション一覧を返す（問題アプリの特定に有用）。"""
+    try:
+        result = argocd.list_unhealthy()
+        if not result:
+            return "全アプリケーションが Healthy 状態です。"
+        return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as e:
         return f"ERROR: {e}"
 

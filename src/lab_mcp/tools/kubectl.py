@@ -1,16 +1,33 @@
 import subprocess
+import shlex
+import json
+import time
+import os
+import tempfile
 from lab_mcp import config
 
+# デフォルトのコマンドタイムアウト (秒)
+_DEFAULT_TIMEOUT = 120
 
-def _run(args: list[str]) -> str:
-    env = {"KUBECONFIG": config.KUBECONFIG}
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        env={**__import__("os").environ, **env},
-    )
-    return (result.stdout + result.stderr).strip()
+
+def _run(args: list[str], timeout: int = _DEFAULT_TIMEOUT) -> str:
+    env = {**os.environ, "KUBECONFIG": config.KUBECONFIG}
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=timeout,
+        )
+        output = (result.stdout + result.stderr).strip()
+        if result.returncode != 0 and not output:
+            return f"ERROR: コマンドが終了コード {result.returncode} で失敗しました"
+        return output
+    except subprocess.TimeoutExpired:
+        return f"ERROR: コマンドがタイムアウトしました ({timeout}秒): {' '.join(args[:4])}..."
+    except FileNotFoundError:
+        return f"ERROR: コマンドが見つかりません: {args[0]}"
 
 
 def get(resource: str, namespace: str | None = None, label_selector: str = "",
@@ -28,9 +45,8 @@ def get(resource: str, namespace: str | None = None, label_selector: str = "",
         args += ["-l", label_selector]
     result = _run(args)
     if jq_filter:
-        import subprocess as _sp, json as _json
         try:
-            jq_proc = _sp.run(
+            jq_proc = subprocess.run(
                 ["jq", "-r", jq_filter],
                 input=result, capture_output=True, text=True, timeout=10
             )
@@ -84,10 +100,19 @@ def helm_show_values(chart: str, version: str = "") -> str:
     return _run(args)
 
 
+def helm_history(release: str, namespace: str = "default") -> str:
+    """helm history でリリースの履歴（リビジョン一覧）を返す。"""
+    return _run(["helm", "history", release, "-n", namespace])
+
+
+def helm_rollback(release: str, revision: int, namespace: str = "default") -> str:
+    """helm rollback でリリースを指定リビジョンに戻す。"""
+    return _run(["helm", "rollback", release, str(revision), "-n", namespace])
+
+
 def apply(manifest: str = "", manifest_content: str = "") -> str:
     """kubectl apply を実行する。ファイルパスまたはインライン YAML を受け付ける。"""
     if manifest_content:
-        import tempfile, os
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(manifest_content)
             tmp_path = f.name
@@ -111,11 +136,7 @@ def patch(resource: str, name: str, patch_json: str,
 
 def annotate(resource: str, name: str, annotations: str,
              namespace: str | None = None, overwrite: bool = True) -> str:
-    """kubectl annotate でアノテーションを追加・更新する。
-
-    Args:
-        annotations: スペース区切りの key=value (例: "argocd.argoproj.io/refresh=hard")
-    """
+    """kubectl annotate でアノテーションを追加・更新する。"""
     args = ["kubectl", "annotate", resource, name] + annotations.split()
     if overwrite:
         args += ["--overwrite"]
@@ -126,47 +147,28 @@ def annotate(resource: str, name: str, annotations: str,
 
 def wait(resource: str, condition: str, namespace: str | None = None,
          timeout_seconds: int = 60) -> str:
-    """kubectl wait でリソースが指定条件になるまで待機する。
-
-    Args:
-        resource: リソース指定 (例: pod/my-pod, deployment/nginx, pods --all)
-        condition: 待機条件 (例: condition=Ready, condition=Available, delete)
-        timeout_seconds: 最大待機秒数 (デフォルト: 60)
-    """
+    """kubectl wait でリソースが指定条件になるまで待機する。"""
     args = ["kubectl", "wait", resource, f"--for={condition}", f"--timeout={timeout_seconds}s"]
     if namespace:
         args += ["-n", namespace]
     else:
         args += ["--all-namespaces"]
-    return _run(args)
+    return _run(args, timeout=timeout_seconds + 10)
 
 
 def rollout_restart(resource: str, namespace: str = "default") -> str:
-    """Deployment / StatefulSet / DaemonSet をローリングリスタートする。
-
-    Args:
-        resource: リソース指定 (例: deployment/nginx, statefulset/postgres)
-    """
+    """Deployment / StatefulSet / DaemonSet をローリングリスタートする。"""
     return _run(["kubectl", "rollout", "restart", resource, "-n", namespace])
 
 
 def rollout_status(resource: str, namespace: str = "default") -> str:
-    """Deployment / StatefulSet / DaemonSet のロールアウト状態を返す。
-
-    Args:
-        resource: リソース指定 (例: deployment/nginx, statefulset/postgres, daemonset/fluentd)
-    """
-    return _run(["kubectl", "rollout", "status", resource, "-n", namespace])
+    """Deployment / StatefulSet / DaemonSet のロールアウト状態を返す。"""
+    return _run(["kubectl", "rollout", "status", resource, "-n", namespace, "--timeout=30s"], timeout=40)
 
 
 def delete(resource: str, name: str, namespace: str | None = None,
            force: bool = False, grace_period: int = -1) -> str:
-    """kubectl delete <resource> <name> を実行する。
-
-    Args:
-        force: 強制削除 (詰まった Pod の解放に有効)
-        grace_period: グレースピリオド秒数 (0 で即時削除。-1 はデフォルト動作)
-    """
+    """kubectl delete <resource> <name> を実行する。"""
     args = ["kubectl", "delete", resource, name]
     if namespace:
         args += ["-n", namespace]
@@ -174,6 +176,61 @@ def delete(resource: str, name: str, namespace: str | None = None,
         args += ["--force"]
     if grace_period >= 0:
         args += [f"--grace-period={grace_period}"]
+    return _run(args)
+
+
+def scale(resource: str, replicas: int, namespace: str = "default") -> str:
+    """kubectl scale でレプリカ数を変更する。"""
+    return _run(["kubectl", "scale", resource, f"--replicas={replicas}", "-n", namespace])
+
+
+def cordon(node: str) -> str:
+    """kubectl cordon でノードをスケジュール不可にする。"""
+    return _run(["kubectl", "cordon", node])
+
+
+def uncordon(node: str) -> str:
+    """kubectl uncordon でノードのスケジュールを再開する。"""
+    return _run(["kubectl", "uncordon", node])
+
+
+def get_pvc(namespace: str | None = None, label_selector: str = "") -> str:
+    """PersistentVolumeClaim の一覧と状態を返す。"""
+    args = ["kubectl", "get", "pvc", "-o", "wide"]
+    if namespace:
+        args += ["-n", namespace]
+    else:
+        args += ["--all-namespaces"]
+    if label_selector:
+        args += ["-l", label_selector]
+    return _run(args)
+
+
+def get_pv() -> str:
+    """PersistentVolume の一覧と状態を返す。"""
+    return _run(["kubectl", "get", "pv", "-o", "wide"])
+
+
+def get_ingress(namespace: str | None = None) -> str:
+    """Ingress リソースの一覧を返す。"""
+    args = ["kubectl", "get", "ingress", "-o", "wide"]
+    if namespace:
+        args += ["-n", namespace]
+    else:
+        args += ["--all-namespaces"]
+    return _run(args)
+
+
+def get_endpoints(name: str = "", namespace: str | None = None) -> str:
+    """Endpoints の一覧を返す（Service→Pod の接続確認に有用）。"""
+    args = ["kubectl", "get", "endpoints"]
+    if name:
+        args += [name]
+    if namespace:
+        args += ["-n", namespace]
+    else:
+        args += ["--all-namespaces"]
+    args += ["-o", "wide"]
     return _run(args)
 
 
@@ -202,7 +259,6 @@ def top(resource: str = "nodes", namespace: str | None = None) -> str:
 
 def exec(pod: str, command: str, namespace: str = "default", container: str = "") -> str:
     """kubectl exec で Pod 内コマンドを実行する。"""
-    import shlex
     args = ["kubectl", "exec", pod, "-n", namespace]
     if container:
         args += ["-c", container]
@@ -212,13 +268,7 @@ def exec(pod: str, command: str, namespace: str = "default", container: str = ""
 
 def get_events(namespace: str | None = None, resource_name: str = "",
                resource_kind: str = "", field_selector: str = "") -> str:
-    """Namespace / Pod のイベント一覧を返す。
-
-    Args:
-        resource_name: 特定リソース名でフィルタ (例: my-pod)
-        resource_kind: リソース種別でフィルタ (例: Pod, Deployment)
-        field_selector: 追加フィールドセレクタ
-    """
+    """Namespace / Pod のイベント一覧を返す。"""
     args = ["kubectl", "get", "events", "--sort-by=.lastTimestamp"]
     if namespace:
         args += ["-n", namespace]
@@ -236,14 +286,20 @@ def get_events(namespace: str | None = None, resource_name: str = "",
     return _run(args)
 
 
-def get_secret(name: str, namespace: str = "default") -> str:
-    """Secret の内容をマスク付きで返す。"""
-    import json
+def get_secret(name: str, namespace: str = "default", decode: bool = False) -> str:
+    """Secret の内容を返す。decode=False ではマスク、True ではデコード済み値を表示。"""
     result = _run(["kubectl", "get", "secret", name, "-n", namespace, "-o", "json"])
     try:
         data = json.loads(result)
         if "data" in data:
-            data["data"] = {k: "***" for k in data["data"]}
+            if decode:
+                import base64
+                data["data"] = {
+                    k: base64.b64decode(v).decode(errors="replace")
+                    for k, v in data["data"].items()
+                }
+            else:
+                data["data"] = {k: "***" for k in data["data"]}
         return json.dumps(data, ensure_ascii=False, indent=2)
     except Exception:
         return result
@@ -256,17 +312,15 @@ def get_configmap(name: str, namespace: str = "default") -> str:
 
 def run_pod(image: str, command: str, namespace: str = "default") -> str:
     """一時 Pod でコマンドを実行し、出力を返す（Pod は自動削除）。"""
-    import shlex, time
     pod_name = f"debug-{int(time.time())}"
     args = ["kubectl", "run", pod_name, f"--image={image}", "-n", namespace,
             "--restart=Never", "--rm", "--attach",
             "--"] + shlex.split(command)
-    return _run(args)
+    return _run(args, timeout=180)
 
 
 def port_forward(resource: str, ports: str, namespace: str = "default") -> str:
     """kubectl port-forward をバックグラウンドで開始する。"""
-    import os
     env = {**os.environ, "KUBECONFIG": config.KUBECONFIG}
     proc = subprocess.Popen(
         ["kubectl", "port-forward", resource, ports, "-n", namespace],

@@ -5,6 +5,7 @@
     ARGOCD_TOKEN   - ArgoCD API トークン
 """
 import json
+import time
 import urllib.request
 import urllib.error
 import ssl
@@ -114,9 +115,17 @@ def get_app(app_name: str) -> dict:
     }
 
 
+def terminate_operation(name: str) -> None:
+    """実行中のオペレーションを終了させる。"""
+    _request("DELETE", f"/api/v1/applications/{name}/operation")
+
+
 def sync_app(name: str, revision: str = "", prune: bool = False,
              dry_run: bool = False) -> dict:
-    """アプリケーションの sync を実行する。"""
+    """アプリケーションの sync を実行する。
+
+    既に操作が進行中の場合は終了させてからリトライする。
+    """
     body: dict = {}
     if revision:
         body["revision"] = revision
@@ -124,10 +133,90 @@ def sync_app(name: str, revision: str = "", prune: bool = False,
         body["prune"] = True
     if dry_run:
         body["dryRun"] = True
-    return _request("POST", f"/api/v1/applications/{name}/sync", body)
+    try:
+        return _request("POST", f"/api/v1/applications/{name}/sync", body)
+    except RuntimeError as e:
+        if "another operation is already in progress" in str(e):
+            terminate_operation(name)
+            time.sleep(2)
+            return _request("POST", f"/api/v1/applications/{name}/sync", body)
+        raise
 
 
 def refresh_app(name: str, hard: bool = True) -> dict:
-    """アプリケーションのキャッシュを更新する (hard refresh)。"""
+    """アプリケーションのキャッシュを更新する (hard refresh)。
+
+    既に操作が進行中の場合は終了させてからリトライする。
+    """
     refresh_type = "hard" if hard else "normal"
-    return _request("GET", f"/api/v1/applications/{name}?refresh={refresh_type}")
+    try:
+        return _request("GET", f"/api/v1/applications/{name}?refresh={refresh_type}")
+    except RuntimeError as e:
+        if "another operation is already in progress" in str(e):
+            terminate_operation(name)
+            time.sleep(2)
+            return _request("GET", f"/api/v1/applications/{name}?refresh={refresh_type}")
+        raise
+
+
+def app_history(name: str) -> list:
+    """アプリケーションの sync 履歴を返す。"""
+    data = _request("GET", f"/api/v1/applications/{name}")
+    history = data.get("status", {}).get("history") or []
+    return [
+        {
+            "id": h.get("id"),
+            "revision": h.get("revision", "")[:12],
+            "deployed_at": h.get("deployedAt"),
+            "source": h.get("source", {}).get("path") or h.get("source", {}).get("chart"),
+        }
+        for h in history
+    ]
+
+
+def app_managed_resources(name: str) -> list:
+    """アプリケーションの管理リソース詳細（live vs desired 差分の有無）を返す。"""
+    data = _request("GET", f"/api/v1/applications/{name}/managed-resources")
+    items = data.get("items") or []
+    return [
+        {
+            "kind": r.get("kind"),
+            "name": r.get("name"),
+            "namespace": r.get("namespace"),
+            "group": r.get("group", ""),
+            "status": r.get("status"),
+            "health": r.get("health", {}).get("status") if r.get("health") else None,
+            "requires_pruning": r.get("requiresPruning", False),
+        }
+        for r in items
+    ]
+
+
+def app_resource_diff(name: str) -> list:
+    """アプリケーションのリソース差分（live vs desired）を返す。"""
+    import urllib.parse
+    data = _request("GET", f"/api/v1/applications/{name}/managed-resources")
+    items = data.get("items") or []
+    diffs = []
+    for r in items:
+        diff_info = r.get("diff", {})
+        if diff_info:
+            diffs.append({
+                "kind": r.get("kind"),
+                "name": r.get("name"),
+                "namespace": r.get("namespace"),
+                "diff": diff_info,
+            })
+    return diffs
+
+
+def list_out_of_sync() -> list:
+    """OutOfSync 状態のアプリケーション一覧を返す。"""
+    apps = list_apps()
+    return [a for a in apps if a.get("sync_status") == "OutOfSync"]
+
+
+def list_unhealthy() -> list:
+    """Healthy 以外の状態のアプリケーション一覧を返す。"""
+    apps = list_apps()
+    return [a for a in apps if a.get("health_status") != "Healthy"]
