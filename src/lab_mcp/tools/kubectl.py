@@ -329,3 +329,81 @@ def port_forward(resource: str, ports: str, namespace: str = "default") -> str:
         env=env,
     )
     return f"ポートフォワードを開始しました。PID: {proc.pid}, リソース: {resource}, ポート: {ports}\n終了するには kill {proc.pid} を実行してください。"
+
+
+def drain(node: str, ignore_daemonsets: bool = True, delete_emptydir_data: bool = True,
+          force: bool = False, timeout_seconds: int = 300) -> str:
+    """kubectl drain でノードからワークロードを退避する。"""
+    args = ["kubectl", "drain", node]
+    if ignore_daemonsets:
+        args += ["--ignore-daemonsets"]
+    if delete_emptydir_data:
+        args += ["--delete-emptydir-data"]
+    if force:
+        args += ["--force"]
+    args += [f"--timeout={timeout_seconds}s"]
+    return _run(args, timeout=timeout_seconds + 30)
+
+
+def get_longhorn_volumes(namespace: str = "longhorn-system") -> str:
+    """Longhorn ボリューム一覧と状態を返す。"""
+    return _run(["kubectl", "get", "volumes.longhorn.io", "-n", namespace, "-o", "wide"])
+
+
+def get_velero_backups() -> str:
+    """Velero バックアップ一覧を返す。"""
+    return _run(["kubectl", "get", "backups.velero.io", "-n", "velero", "-o", "wide"])
+
+
+def get_velero_restores() -> str:
+    """Velero リストア一覧を返す。"""
+    return _run(["kubectl", "get", "restores.velero.io", "-n", "velero", "-o", "wide"])
+
+
+def get_velero_schedules() -> str:
+    """Velero スケジュール一覧を返す。"""
+    return _run(["kubectl", "get", "schedules.velero.io", "-n", "velero", "-o", "wide"])
+
+
+def create_velero_backup(name: str, namespaces: str = "", selector: str = "") -> str:
+    """Velero バックアップを作成する。"""
+    manifest = {
+        "apiVersion": "velero.io/v1",
+        "kind": "Backup",
+        "metadata": {"name": name, "namespace": "velero"},
+        "spec": {},
+    }
+    if namespaces:
+        manifest["spec"]["includedNamespaces"] = [ns.strip() for ns in namespaces.split(",")]
+    if selector:
+        manifest["spec"]["labelSelector"] = {"matchLabels": dict(
+            item.split("=") for item in selector.split(",")
+        )}
+    content = json.dumps(manifest)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write(content)
+        tmp_path = f.name
+    try:
+        return _run(["kubectl", "apply", "-f", tmp_path])
+    finally:
+        os.unlink(tmp_path)
+
+
+def create_velero_restore(name: str, backup_name: str, namespaces: str = "") -> str:
+    """Velero リストアを作成する。"""
+    manifest = {
+        "apiVersion": "velero.io/v1",
+        "kind": "Restore",
+        "metadata": {"name": name, "namespace": "velero"},
+        "spec": {"backupName": backup_name},
+    }
+    if namespaces:
+        manifest["spec"]["includedNamespaces"] = [ns.strip() for ns in namespaces.split(",")]
+    content = json.dumps(manifest)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        f.write(content)
+        tmp_path = f.name
+    try:
+        return _run(["kubectl", "apply", "-f", tmp_path])
+    finally:
+        os.unlink(tmp_path)

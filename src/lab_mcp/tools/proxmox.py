@@ -296,3 +296,17 @@ def get_storage_content(node: str, storage: str, content_type: str = "") -> list
         }
         for i in items
     ]
+
+
+def migrate_vm(node: str, vmid: int, target: str, online: bool = False, vm_type: str = "qemu") -> str:
+    """VM / LXC を別ノードにマイグレーションする。"""
+    pve = _client()
+    params = {"target": target}
+    if online:
+        params["online"] = 1
+    if vm_type == "lxc":
+        pve.nodes(node).lxc(vmid).migrate.post(**params)
+    else:
+        pve.nodes(node).qemu(vmid).migrate.post(**params)
+    mode = "オンライン" if online else "オフライン"
+    return f"VMID {vmid} の{mode}マイグレーション ({node} → {target}) を開始しました。"

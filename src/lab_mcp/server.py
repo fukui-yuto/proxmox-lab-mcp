@@ -1136,6 +1136,182 @@ def argocd_list_unhealthy() -> str:
         return f"ERROR: {e}"
 
 
+@mcp.tool()
+def argocd_app_diff(app_name: str) -> str:
+    """ArgoCD アプリケーションのリソース差分（live vs desired）を返す。OutOfSync の原因特定に有用。
+
+    Args:
+        app_name: アプリケーション名
+    """
+    try:
+        result = argocd.app_resource_diff(app_name)
+        if not result:
+            return "差分はありません（Synced 状態）。"
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+@mcp.tool()
+def argocd_app_terminate_op(app_name: str) -> str:
+    """ArgoCD アプリケーションの実行中オペレーションを終了させる。sync が詰まった場合に使用。
+
+    Args:
+        app_name: アプリケーション名
+    """
+    try:
+        argocd.terminate_operation(app_name)
+        return f"アプリケーション '{app_name}' のオペレーションを終了しました。"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+# ── Longhorn ──────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def longhorn_volumes(namespace: str = "longhorn-system") -> str:
+    """Longhorn ボリューム一覧と状態（attached/detached/faulted）を返す。
+
+    Args:
+        namespace: Longhorn namespace (デフォルト: longhorn-system)
+    """
+    return kubectl.get_longhorn_volumes(namespace)
+
+
+# ── Velero ────────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def velero_backup_list() -> str:
+    """Velero バックアップ一覧と状態を返す。"""
+    return kubectl.get_velero_backups()
+
+
+@mcp.tool()
+def velero_restore_list() -> str:
+    """Velero リストア一覧と状態を返す。"""
+    return kubectl.get_velero_restores()
+
+
+@mcp.tool()
+def velero_schedule_list() -> str:
+    """Velero スケジュール一覧を返す。"""
+    return kubectl.get_velero_schedules()
+
+
+@mcp.tool()
+def velero_create_backup(name: str, namespaces: str = "", selector: str = "",
+                         confirm: bool = False) -> str:
+    """Velero バックアップを作成する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        name: バックアップ名
+        namespaces: 対象 namespace (カンマ区切り、省略時は全 namespace)
+        selector: ラベルセレクタ (例: "app=nginx,env=prod")
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.create_velero_backup(name, namespaces, selector)
+
+
+@mcp.tool()
+def velero_create_restore(name: str, backup_name: str, namespaces: str = "",
+                          confirm: bool = False) -> str:
+    """Velero リストアを実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        name: リストア名
+        backup_name: 復元元バックアップ名
+        namespaces: 対象 namespace (カンマ区切り、省略時はバックアップ全体)
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.create_velero_restore(name, backup_name, namespaces)
+
+
+# ── kubectl 追加 ──────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def kubectl_drain(node: str, ignore_daemonsets: bool = True, delete_emptydir_data: bool = True,
+                  force: bool = False, confirm: bool = False) -> str:
+    """kubectl drain でノードからワークロードを退避する。メンテナンス時に使用。破壊的操作のため confirm=true が必須。
+
+    Args:
+        node: ノード名
+        ignore_daemonsets: DaemonSet の Pod を無視する (デフォルト: true)
+        delete_emptydir_data: emptyDir データの削除を許可する (デフォルト: true)
+        force: 管理されていない Pod も強制退避する
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return kubectl.drain(node, ignore_daemonsets, delete_emptydir_data, force)
+
+
+# ── Proxmox 追加 ─────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def proxmox_migrate_vm(node: str, vmid: int, target: str, online: bool = False,
+                       vm_type: str = "qemu", confirm: bool = False) -> str:
+    """VM / LXC を別ノードにマイグレーションする。破壊的操作のため confirm=true が必須。
+
+    Args:
+        node: 現在のノード名 (例: pve-node01)
+        vmid: VM ID
+        target: 移動先ノード名 (例: pve-node02)
+        online: オンラインマイグレーション (VM 稼働中に移動。false=停止してから移動)
+        vm_type: "qemu" または "lxc"
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    try:
+        return proxmox.migrate_vm(node, vmid, target, online, vm_type)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+# ── Lab 追加 ──────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def lab_journal(host: str, unit: str = "", lines: int = 100, priority: str = "",
+                since: str = "", grep: str = "", user: str = "") -> str:
+    """SSH 経由で journalctl のログを取得する。VM やホストのサービスログ確認に有用。
+
+    Args:
+        host: 接続先 IP (例: 192.168.210.11)
+        unit: systemd ユニット名 (例: kubelet, k3s, corosync, e1000e)
+        lines: 取得行数 (デフォルト: 100)
+        priority: 優先度フィルタ (例: err, warning, info)
+        since: 指定日時以降のログ (例: "1 hour ago", "2024-01-01 00:00:00")
+        grep: ログ内のテキスト検索 (例: "Hardware Unit Hang")
+        user: SSH ユーザー名 (VM は "ubuntu"、Proxmox は "root")
+    """
+    return lab.journal(host, unit, lines, priority, since, grep, user)
+
+
+@mcp.tool()
+def lab_start_cluster() -> str:
+    """ラボクラスター全体を起動する（WoL → VM 起動 → k3s 確認）。
+    power/scripts/start-lab.sh を Raspberry Pi 上で実行する。
+    """
+    return lab.start_cluster()
+
+
+@mcp.tool()
+def lab_stop_cluster(confirm: bool = False) -> str:
+    """ラボクラスター全体を停止する（k3s drain → VM 停止 → Proxmox シャットダウン）。
+    power/scripts/stop-lab.sh を Raspberry Pi 上で実行する。破壊的操作のため confirm=true が必須。
+
+    Args:
+        confirm: true を明示しないと実行されない
+    """
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return lab.stop_cluster(confirm=True)
+
+
 # ── エントリポイント ──────────────────────────────────────────────────────────
 
 def main() -> None:

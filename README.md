@@ -238,17 +238,62 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `argocd_get_app` | アプリ詳細（リソース一覧・条件付き状態） | ✗ |
 | `argocd_sync` | アプリの sync 実行（revision / prune / dry_run 対応） | ✓ |
 | `argocd_refresh` | hard refresh トリガー（Git から再取得） | ✗ |
+| `argocd_app_history` | sync 履歴（いつ・どのリビジョンがデプロイされたか） | ✗ |
+| `argocd_app_managed_resources` | 管理リソース一覧（status / health / prune 状態） | ✗ |
+| `argocd_app_diff` | リソース差分（live vs desired）— OutOfSync 原因特定 | ✗ |
+| `argocd_app_terminate_op` | 実行中オペレーションの終了（sync 詰まり解消） | ✗ |
+| `argocd_list_out_of_sync` | OutOfSync アプリの一覧 | ✗ |
+| `argocd_list_unhealthy` | Unhealthy アプリの一覧 | ✗ |
+
+### Longhorn ✅
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `longhorn_volumes` | ボリューム一覧と状態（attached / detached / faulted） | ✗ |
+
+### Velero (バックアップ / リストア) ✅
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `velero_backup_list` | バックアップ一覧と状態 | ✗ |
+| `velero_restore_list` | リストア一覧と状態 | ✗ |
+| `velero_schedule_list` | スケジュール一覧 | ✗ |
+| `velero_create_backup` | バックアップ作成 | ✓ confirm 必須 |
+| `velero_create_restore` | リストア実行 | ✓ confirm 必須 |
+
+### kubectl / Helm 追加 ✅
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `kubectl_drain` | ノードからワークロード退避（メンテナンス用） | ✓ confirm 必須 |
+| `kubectl_cordon` | ノードをスケジュール不可にする | ✗ |
+| `kubectl_uncordon` | ノードのスケジュール再開 | ✗ |
+| `kubectl_scale` | レプリカ数変更 | ✗ |
+| `helm_history` | リリースの履歴（リビジョン一覧） | ✗ |
+| `helm_rollback` | リリースを指定リビジョンに戻す | ✓ confirm 必須 |
+
+### Proxmox 追加 ✅
+
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `proxmox_migrate_vm` | VM / LXC を別ノードにマイグレーション | ✓ confirm 必須 |
 
 ### Lab ユーティリティ ✅
 
-| ツール名 | 説明 |
-|---|---|
-| `lab_ping` | Raspberry Pi から疎通確認 |
-| `lab_wakeup` | Wake-on-LAN でホスト起動 |
-| `lab_exec` | SSH 経由で VM / ホスト上のコマンドを直接実行（**timeout_seconds** 対応、stdout/stderr 分離出力） |
-| `lab_check_port` | ポート開閉・疎通の確認 |
-| `lab_dns_lookup` | DNS 名前解決（Pi-hole 経由確認等） |
-| `lab_cluster_health` | ラボ全体の健全性サマリー（Proxmox + K8s ノード + 異常 Pod 一括確認） |
+| ツール名 | 説明 | 破壊的 |
+|---|---|---|
+| `lab_ping` | Raspberry Pi から疎通確認 | ✗ |
+| `lab_wakeup` | Wake-on-LAN でホスト起動 | ✗ |
+| `lab_exec` | SSH 経由で VM / ホスト上のコマンドを直接実行 | ✗ |
+| `lab_check_port` | ポート開閉・疎通の確認 | ✗ |
+| `lab_check_ports` | 複数ポート一括確認 | ✗ |
+| `lab_dns_lookup` | DNS 名前解決（Pi-hole 経由確認等） | ✗ |
+| `lab_traceroute` | ネットワーク経路確認 | ✗ |
+| `lab_curl` | HTTP リクエスト実行（ヘルスチェック等） | ✗ |
+| `lab_journal` | SSH 経由で journalctl ログ取得 | ✗ |
+| `lab_start_cluster` | クラスター全体の起動 | ✗ |
+| `lab_stop_cluster` | クラスター全体の停止 | ✓ confirm 必須 |
+| `lab_cluster_health` | ラボ全体の健全性サマリー | ✗ |
 
 ## 安全設計
 

@@ -155,6 +155,44 @@ def traceroute(host: str, max_hops: int = 15) -> str:
         return "ERROR: traceroute コマンドが見つかりません"
 
 
+def journal(host: str, unit: str = "", lines: int = 100, priority: str = "",
+            since: str = "", grep: str = "", user: str = "", ssh_key: str = "") -> str:
+    """SSH 経由で journalctl のログを取得する。
+
+    Args:
+        host: 接続先ホスト名または IP
+        unit: systemd ユニット名 (例: kubelet, k3s, corosync)
+        lines: 取得行数 (デフォルト: 100)
+        priority: 優先度フィルタ (例: err, warning, info)
+        since: 指定日時以降のログ (例: "1 hour ago", "2024-01-01 00:00:00")
+        grep: ログ内のテキスト検索
+        user: SSH ユーザー名
+        ssh_key: SSH 秘密鍵パス
+    """
+    cmd = f"journalctl --no-pager -n {lines}"
+    if unit:
+        cmd += f" -u {unit}"
+    if priority:
+        cmd += f" -p {priority}"
+    if since:
+        cmd += f" --since='{since}'"
+    if grep:
+        cmd += f" --grep='{grep}'"
+    return exec(host, cmd, user, ssh_key, timeout_seconds=30)
+
+
+def start_cluster(user: str = "", ssh_key: str = "") -> str:
+    """ラボクラスター全体を起動する (power/scripts/start-lab.sh を実行)。"""
+    return exec("localhost", "bash ~/proxmox-lab/power/scripts/start-lab.sh", user, ssh_key, timeout_seconds=300)
+
+
+def stop_cluster(user: str = "", ssh_key: str = "", confirm: bool = False) -> str:
+    """ラボクラスター全体を停止する (power/scripts/stop-lab.sh を実行)。"""
+    if not confirm:
+        return "ERROR: 破壊的操作です。confirm=true を明示してください。"
+    return exec("localhost", "bash ~/proxmox-lab/power/scripts/stop-lab.sh", user, ssh_key, timeout_seconds=300)
+
+
 def curl(url: str, method: str = "GET", headers: str = "", data: str = "",
          timeout_seconds: int = 30, insecure: bool = False) -> str:
     """curl で HTTP リクエストを実行する（ラボ内サービスの接続テストに有用）。
