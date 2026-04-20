@@ -1292,6 +1292,18 @@ def lab_journal(host: str, unit: str = "", lines: int = 100, priority: str = "",
 
 
 @mcp.tool()
+def cilium_status() -> str:
+    """Cilium CNI の状態を返す（agent health / endpoint 数 / encryption 状態）。"""
+    return kubectl.get_cilium_status()
+
+
+@mcp.tool()
+def vault_status() -> str:
+    """HashiCorp Vault の状態を返す（sealed / unsealed / HA モード）。"""
+    return kubectl.get_vault_status()
+
+
+@mcp.tool()
 def lab_start_cluster() -> str:
     """ラボクラスター全体を起動する（WoL → VM 起動 → k3s 確認）。
     power/scripts/start-lab.sh を Raspberry Pi 上で実行する。

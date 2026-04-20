@@ -407,3 +407,30 @@ def create_velero_restore(name: str, backup_name: str, namespaces: str = "") -> 
         return _run(["kubectl", "apply", "-f", tmp_path])
     finally:
         os.unlink(tmp_path)
+
+
+def get_cilium_status() -> str:
+    """Cilium の状態を返す (cilium status via DaemonSet Pod)。"""
+    # cilium CLI がインストールされていない環境向けに Pod 経由で実行
+    result = _run(["kubectl", "get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium",
+                   "-o", "jsonpath={.items[0].metadata.name}"])
+    if result.startswith("ERROR"):
+        return result
+    pod_name = result.strip()
+    if not pod_name:
+        return "ERROR: Cilium Pod が見つかりません"
+    return _run(["kubectl", "exec", "-n", "kube-system", pod_name, "-c", "cilium-agent",
+                 "--", "cilium", "status", "--brief"], timeout=30)
+
+
+def get_vault_status() -> str:
+    """Vault の状態 (sealed/unsealed) を返す。"""
+    result = _run(["kubectl", "get", "pods", "-n", "vault", "-l", "app.kubernetes.io/name=vault",
+                   "-o", "jsonpath={.items[0].metadata.name}"])
+    if result.startswith("ERROR"):
+        return result
+    pod_name = result.strip()
+    if not pod_name:
+        return "ERROR: Vault Pod が見つかりません"
+    return _run(["kubectl", "exec", "-n", "vault", pod_name, "--",
+                 "vault", "status", "-format=json"], timeout=15)

@@ -245,11 +245,13 @@ claude mcp add --transport sse -s user proxmox-lab http://<pi-ip>:8000/sse
 | `argocd_list_out_of_sync` | OutOfSync アプリの一覧 | ✗ |
 | `argocd_list_unhealthy` | Unhealthy アプリの一覧 | ✗ |
 
-### Longhorn ✅
+### Longhorn / Cilium / Vault ✅
 
 | ツール名 | 説明 | 破壊的 |
 |---|---|---|
 | `longhorn_volumes` | ボリューム一覧と状態（attached / detached / faulted） | ✗ |
+| `cilium_status` | Cilium CNI の状態（agent health / endpoint 数） | ✗ |
+| `vault_status` | Vault の状態（sealed / unsealed / HA モード） | ✗ |
 
 ### Velero (バックアップ / リストア) ✅
 
